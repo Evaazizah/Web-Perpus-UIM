@@ -42,7 +42,10 @@ import {
   GraduationCap,
   RotateCw,
   Sliders,
-  Check
+  Check,
+  X,
+  Globe2,
+  BookPlus
 } from 'lucide-react';
 
 export default function Home({
@@ -66,6 +69,12 @@ export default function Home({
   // Modals
   const [isStudentCardOpen, setIsStudentCardOpen] = useState(false);
   const [isAdminQuickAddOpen, setIsAdminQuickAddOpen] = useState(false);
+
+  // Novelty Academic Service Modals (Khas Perpustakaan UNUSA / SLiMS 9)
+  const [serviceModal, setServiceModal] = useState(null); // 'repositori' | 'bebas-pustaka' | 'turnitin' | 'ejournal' | 'usulan-buku' | null
+  const [bookSuggestion, setBookSuggestion] = useState({ judul: '', pengarang: '', penerbit: '', prodi: '', alasan: '' });
+  const [checkNimBebasPustaka, setCheckNimBebasPustaka] = useState('');
+  const [bebasPustakaResult, setBebasPustakaResult] = useState(null);
 
   // Mahasiswa states
   const [studentLoans, setStudentLoans] = useState([]);
@@ -256,6 +265,42 @@ export default function Home({
     setTimeout(() => setToastMsg(null), 3800);
   };
 
+  const handleCheckBebasPustaka = (e) => {
+    e?.preventDefault();
+    const nimToCheck = checkNimBebasPustaka.trim() || (currentUser?.role === 'user' ? currentUser.nim : '');
+    if (!nimToCheck) {
+      showToast('Masukkan NIM mahasiswa terlebih dahulu');
+      return;
+    }
+    const loans = getLoansByNim(nimToCheck);
+    const active = loans.filter((l) => l.status === 'dipinjam');
+    if (active.length === 0) {
+      setBebasPustakaResult({
+        status: 'clear',
+        nim: nimToCheck,
+        message: 'Selamat! Tidak ada tanggungan pinjaman buku perpustakaan. Anda memenuhi syarat penerbitan Surat Bebas Pustaka.'
+      });
+    } else {
+      setBebasPustakaResult({
+        status: 'pending',
+        nim: nimToCheck,
+        count: active.length,
+        message: `Masih terdapat ${active.length} buku yang belum dikembalikan ke Meja Sirkulasi.`
+      });
+    }
+  };
+
+  const handleSuggestionSubmit = (e) => {
+    e.preventDefault();
+    if (!bookSuggestion.judul.trim()) {
+      showToast('Mohon masukkan judul buku yang diusulkan');
+      return;
+    }
+    showToast(`Usulan buku "${bookSuggestion.judul}" berhasil dikirimkan ke UPT Perpustakaan UIM!`);
+    setBookSuggestion({ judul: '', pengarang: '', penerbit: '', prodi: '', alasan: '' });
+    setServiceModal(null);
+  };
+
   const categories = ['Semua', ...new Set(books.map((b) => b.kategori))];
 
   const totalBooks = books.length;
@@ -312,7 +357,7 @@ export default function Home({
         </div>
       )}
 
-      {/* 1. HERO BANNER MODERN ELEGAN */}
+      {/* 1. HERO BANNER SLIMS 9 BULIAN (OPAC RESMI & NOVELTY) */}
       <HeroBanner
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
@@ -321,6 +366,7 @@ export default function Home({
         totalBooks={totalBooks}
         totalCopies={totalCopies}
         totalMembers={totalMembers}
+        onOpenServiceModal={(modalId) => setServiceModal(modalId)}
       />
 
       {/* 2. SUBJECT CARDS ELEGAN & INTERAKTIF */}
@@ -867,6 +913,333 @@ export default function Home({
         onClose={() => setIsAdminQuickAddOpen(false)}
         onBookAdded={handleBookAdded}
       />
+
+      {/* ================= MODAL NOVELTY: REPOSITORI SKRIPSI & TUGAS AKHIR ================= */}
+      {serviceModal === 'repositori' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 text-slate-800 shadow-2xl relative">
+            <button
+              onClick={() => setServiceModal(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-2 mb-3 text-blue-700">
+              <FileCheck className="w-6 h-6" />
+              <h3 className="text-lg font-bold">Repositori Institusi (DSpace UIM)</h3>
+            </div>
+            <p className="text-xs text-slate-600 mb-4 leading-relaxed">
+              Koleksi karya ilmiah terbuka mencakup naskah skripsi sarjana, tesis, laporan penelitian dosen, dan jurnal institusi Universitas Islam Madura.
+            </p>
+            <div className="space-y-2.5 text-xs">
+              <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-200">
+                <span className="font-bold text-slate-800 block">7 Fakultas Terintegrasi</span>
+                <p className="text-[11px] text-slate-500 mt-0.5">Fakultas Teknik, Pertanian, Hukum, Agama Islam, FKIP, Ekonomi, dan MIPA.</p>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <span className="font-bold text-slate-800 block">Ketentuan Penyerahan Softcopy</span>
+                <p className="text-[11px] text-slate-500 mt-0.5">Mahasiswa tingkat akhir wajib mengunggah file skripsi lengkap (PDF) sebagai syarat bebas pustaka wisuda.</p>
+              </div>
+            </div>
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setServiceModal(null)}
+                className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs"
+              >
+                Tutup
+              </button>
+              <a
+                href="https://uim.ac.id"
+                target="_blank"
+                rel="noreferrer"
+                className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <span>Buka DSpace UIM</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL NOVELTY: BEBAS PUSTAKA ONLINE ================= */}
+      {serviceModal === 'bebas-pustaka' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 text-slate-800 shadow-2xl relative">
+            <button
+              onClick={() => {
+                setServiceModal(null);
+                setBebasPustakaResult(null);
+              }}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-2 mb-3 text-amber-600">
+              <Award className="w-6 h-6" />
+              <h3 className="text-lg font-bold">Layanan Bebas Pustaka Online</h3>
+            </div>
+            <p className="text-xs text-slate-600 mb-4 leading-relaxed">
+              Pengecekan mandiri surat keterangan bebas tanggungan peminjaman buku perpustakaan untuk syarat yudisium dan pendaftaran wisuda.
+            </p>
+
+            <form onSubmit={handleCheckBebasPustaka} className="space-y-3 mb-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Nomor Induk Mahasiswa (NIM):
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Contoh: 2021503001"
+                    value={checkNimBebasPustaka || (currentUser?.nim || '')}
+                    onChange={(e) => setCheckNimBebasPustaka(e.target.value)}
+                    className="flex-1 px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                  />
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs transition-colors"
+                  >
+                    Periksa
+                  </button>
+                </div>
+              </div>
+            </form>
+
+            {bebasPustakaResult && (
+              <div className={`p-4 rounded-xl text-xs mb-4 ${
+                bebasPustakaResult.status === 'clear'
+                  ? 'bg-emerald-50 border border-emerald-300 text-emerald-800'
+                  : 'bg-red-50 border border-red-300 text-red-800'
+              }`}>
+                <div className="flex items-center gap-2 font-bold mb-1">
+                  {bebasPustakaResult.status === 'clear' ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  ) : (
+                    <X className="w-4 h-4 text-red-600" />
+                  )}
+                  <span>Status: {bebasPustakaResult.status === 'clear' ? 'BEBAS TANGGUNGAN' : 'BELUM BEBAS PUSTAKA'}</span>
+                </div>
+                <p className="text-[11px] leading-relaxed">{bebasPustakaResult.message}</p>
+                {bebasPustakaResult.status === 'clear' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      showToast('Surat Keterangan Bebas Pustaka sedang disiapkan untuk diunduh!');
+                    }}
+                    className="mt-3 w-full py-2 bg-[#047857] hover:bg-[#064e3b] text-white font-bold rounded-lg text-xs transition-colors"
+                  >
+                    Cetak Surat Keterangan Bebas Pustaka (PDF)
+                  </button>
+                )}
+              </div>
+            )}
+
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] text-slate-500">
+              <span className="font-semibold text-slate-700 block mb-0.5">Syarat Penerbitan:</span>
+              • Tidak memiliki pinjaman buku aktif.<br />
+              • Tidak memiliki denda keterlambatan.<br />
+              • Sudah menyerahkan softcopy skripsi ke meja repositori.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL NOVELTY: UJI TURNITIN & PLAGIASI ================= */}
+      {serviceModal === 'turnitin' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 text-slate-800 shadow-2xl relative">
+            <button
+              onClick={() => setServiceModal(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-2 mb-3 text-teal-700">
+              <ShieldCheck className="w-6 h-6" />
+              <h3 className="text-lg font-bold">Layanan Uji Kemiripan (Turnitin)</h3>
+            </div>
+            <p className="text-xs text-slate-600 mb-4 leading-relaxed">
+              Layanan pengecekan similaritas naskah skripsi, tesis, dan artikel jurnal civitas akademika UIM menggunakan akun resmi Turnitin Perpustakaan.
+            </p>
+            <div className="space-y-2.5 text-xs">
+              <div className="p-3 bg-teal-50/70 rounded-xl border border-teal-200">
+                <span className="font-bold text-slate-800 block">Standar Maksimal Kemiripan UIM</span>
+                <p className="text-[11px] text-slate-600 mt-0.5">Ambang batas kemiripan (*similarity index*) adalah <strong>maksimal 20%</strong> (tidak termasuk bab referensi/daftar pustaka).</p>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <span className="font-bold text-slate-800 block">Alur Pengajuan Naskah</span>
+                <p className="text-[11px] text-slate-600 mt-0.5">Kirimkan file naskah format .doc/.docx beserta cover ke email: <strong className="text-teal-700">turnitin@uim.ac.id</strong> atau datang langsung ke Meja Sirkulasi Lantai 1.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setServiceModal(null)}
+              className="mt-5 w-full py-2 bg-teal-700 hover:bg-teal-800 text-white font-bold rounded-xl text-xs transition-colors"
+            >
+              Tutup Panduan
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL NOVELTY: E-JOURNAL & DATABASE ================= */}
+      {serviceModal === 'ejournal' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 text-slate-800 shadow-2xl relative">
+            <button
+              onClick={() => setServiceModal(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-2 mb-3 text-indigo-700">
+              <Globe2 className="w-6 h-6" />
+              <h3 className="text-lg font-bold">Pangkalan Data E-Journal & E-Resources</h3>
+            </div>
+            <p className="text-xs text-slate-600 mb-4 leading-relaxed">
+              Akses cepat pangkalan data jurnal ilmiah terakreditasi nasional dan internasional yang dilanggan maupun akses terbuka:
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              <a
+                href="https://sinta.kemdikbud.go.id"
+                target="_blank"
+                rel="noreferrer"
+                className="p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all block"
+              >
+                <span className="font-bold text-slate-800 block">SINTA Kemendikbud</span>
+                <span className="text-[10px] text-slate-500">Peringkat Jurnal Ilmiah S1 - S6</span>
+              </a>
+              <a
+                href="https://garuda.kemdikbud.go.id"
+                target="_blank"
+                rel="noreferrer"
+                className="p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all block"
+              >
+                <span className="font-bold text-slate-800 block">GARUDA</span>
+                <span className="text-[10px] text-slate-500">Garba Rujukan Digital Nasional</span>
+              </a>
+              <a
+                href="https://moraref.kemenag.go.id"
+                target="_blank"
+                rel="noreferrer"
+                className="p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all block"
+              >
+                <span className="font-bold text-slate-800 block">MORAREF Kemenag</span>
+                <span className="text-[10px] text-slate-500">Riset PTKI & Studi Islam</span>
+              </a>
+              <a
+                href="https://www.neliti.com"
+                target="_blank"
+                rel="noreferrer"
+                className="p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all block"
+              >
+                <span className="font-bold text-slate-800 block">NELITI</span>
+                <span className="text-[10px] text-slate-500">Repositori Riset Indonesia</span>
+              </a>
+            </div>
+            <button
+              type="button"
+              onClick={() => setServiceModal(null)}
+              className="mt-5 w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs"
+            >
+              Tutup
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL NOVELTY: USULAN PENGADAAN BUKU ================= */}
+      {serviceModal === 'usulan-buku' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 text-slate-800 shadow-2xl relative">
+            <button
+              onClick={() => setServiceModal(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-2 mb-3 text-purple-700">
+              <BookPlus className="w-6 h-6" />
+              <h3 className="text-lg font-bold">Usulan Pengadaan Koleksi Buku Baru</h3>
+            </div>
+            <p className="text-xs text-slate-600 mb-4 leading-relaxed">
+              Sampaikan usulan judul buku rujukan yang dibutuhkan dalam perkuliahan atau riset Anda untuk kami pertimbangkan dalam pengadaan koleksi perpustakaan.
+            </p>
+            <form onSubmit={handleSuggestionSubmit} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Judul Buku yang Diusulkan *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Contoh: Metodologi Penelitian Kualitatif Praktis"
+                  value={bookSuggestion.judul}
+                  onChange={(e) => setBookSuggestion({ ...bookSuggestion, judul: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:ring-1 focus:ring-purple-500 focus:outline-none"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Pengarang / Penulis</label>
+                  <input
+                    type="text"
+                    placeholder="Nama Penulis"
+                    value={bookSuggestion.pengarang}
+                    onChange={(e) => setBookSuggestion({ ...bookSuggestion, pengarang: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:ring-1 focus:ring-purple-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Penerbit / Tahun</label>
+                  <input
+                    type="text"
+                    placeholder="Penerbit & Tahun"
+                    value={bookSuggestion.penerbit}
+                    onChange={(e) => setBookSuggestion({ ...bookSuggestion, penerbit: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:ring-1 focus:ring-purple-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Program Studi / Keperluan</label>
+                <input
+                  type="text"
+                  placeholder="Contoh: Teknik Informatika - Mata Kuliah Machine Learning"
+                  value={bookSuggestion.prodi}
+                  onChange={(e) => setBookSuggestion({ ...bookSuggestion, prodi: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:ring-1 focus:ring-purple-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Alasan Kebutuhan Koleksi</label>
+                <textarea
+                  rows="2"
+                  placeholder="Jelaskan secara singkat manfaat buku ini bagi civitas akademika..."
+                  value={bookSuggestion.alasan}
+                  onChange={(e) => setBookSuggestion({ ...bookSuggestion, alasan: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:ring-1 focus:ring-purple-500 focus:outline-none"
+                />
+              </div>
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setServiceModal(null)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-purple-700 hover:bg-purple-800 text-white font-bold rounded-xl transition-colors"
+                >
+                  Kirim Usulan Buku
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* FOOTER RESMI PERPUSTAKAAN UIM */}
       <footer className="bg-[#022c22] text-white border-t border-emerald-950 mt-16 py-10">

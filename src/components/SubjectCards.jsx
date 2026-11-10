@@ -173,7 +173,7 @@ export default function SubjectCards({ selectedCategory, onSelectCategory }) {
   };
 
   return (
-    <section className="pt-28 sm:pt-36 pb-12 bg-gradient-to-b from-slate-50 to-white relative">
+    <section className="py-10 sm:py-14 bg-gradient-to-b from-slate-50 to-white relative">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
         <div className="text-center max-w-2xl mx-auto mb-10">

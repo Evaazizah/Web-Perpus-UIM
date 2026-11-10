@@ -43,7 +43,7 @@ export default function BookCard({
         {isRecommendation && (
           <div className="absolute top-0 right-0 z-20 bg-gradient-to-l from-emerald-600 to-[#047857] text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl shadow-md flex items-center gap-1">
             <Sparkles className="w-3 h-3 text-amber-300" />
-            <span>Pilihan AI</span>
+            <span>Rekomendasi Pustaka</span>
           </div>
         )}
 

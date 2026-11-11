@@ -18,6 +18,10 @@ import {
   renewLoan
 } from '../lib/circulationService';
 import {
+  getVisitorStats,
+  subscribeVisitorStats
+} from '../lib/visitorService';
+import {
   Menu,
   BookOpen,
   Users,
@@ -68,7 +72,8 @@ import {
   Eye,
   CheckCircle2,
   AlertCircle,
-  QrCode
+  QrCode,
+  Activity
 } from 'lucide-react';
 
 export default function AdminDashboard({
@@ -290,8 +295,15 @@ export default function AdminDashboard({
     setLoans(getStoredLoans());
   };
 
+  // State Statistik Pengunjung Real-Time (Blueprint 5.B)
+  const [visitorStats, setVisitorStats] = useState(getVisitorStats());
+
   useEffect(() => {
     loadAllData();
+    const unsub = subscribeVisitorStats((newStats) => {
+      setVisitorStats({ ...newStats });
+    });
+    return () => unsub();
   }, []);
 
   // Theme color styling
@@ -1232,6 +1244,46 @@ export default function AdminDashboard({
                 <div className="bg-white rounded-lg p-3 sm:p-5 border border-slate-200 shadow-xs flex items-center gap-2.5 sm:gap-4 min-w-0">
                   <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 shrink-0"><CheckCircle className="w-4 h-4 sm:w-6 sm:h-6 stroke-[1.5]" /></div>
                   <div className="min-w-0 flex-1"><span className="text-base sm:text-2xl font-bold text-slate-800 block truncate">{totalAvailable}</span><span className="text-[11px] sm:text-xs text-slate-500 font-medium block truncate">Tersedia</span></div>
+                </div>
+              </div>
+
+              {/* Statistik Pengunjung & Trafik OPAC (Blueprint 5.B & 5.C) */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+                <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-lg p-3 sm:p-4 border border-emerald-200 shadow-xs flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+                  <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                    <Users className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-base sm:text-2xl font-bold text-emerald-900 block truncate">{visitorStats.todayVisitors.toLocaleString('id-ID')}</span>
+                    <span className="text-[11px] sm:text-xs text-emerald-700 font-medium block truncate">Pengunjung Hari Ini</span>
+                  </div>
+                </div>
+                <div className="bg-gradient-to-br from-cyan-50 to-sky-50 rounded-lg p-3 sm:p-4 border border-cyan-200 shadow-xs flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+                  <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-cyan-600 text-white flex items-center justify-center shrink-0">
+                    <Eye className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-base sm:text-2xl font-bold text-cyan-900 block truncate">{visitorStats.todayHits.toLocaleString('id-ID')}</span>
+                    <span className="text-[11px] sm:text-xs text-cyan-700 font-medium block truncate">Hits Hari Ini</span>
+                  </div>
+                </div>
+                <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-lg p-3 sm:p-4 border border-amber-200 shadow-xs flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+                  <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center shrink-0 font-bold">
+                    <Globe className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-base sm:text-2xl font-bold text-amber-950 block truncate">{visitorStats.totalVisitors.toLocaleString('id-ID')}</span>
+                    <span className="text-[11px] sm:text-xs text-amber-800 font-medium block truncate">Total Pengunjung Unik</span>
+                  </div>
+                </div>
+                <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg p-3 sm:p-4 border border-purple-200 shadow-xs flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+                  <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-purple-600 text-white flex items-center justify-center shrink-0">
+                    <Activity className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-base sm:text-2xl font-bold text-purple-900 block truncate">{visitorStats.totalHits.toLocaleString('id-ID')}</span>
+                    <span className="text-[11px] sm:text-xs text-purple-700 font-medium block truncate">Total Kunjungan Halaman</span>
+                  </div>
                 </div>
               </div>
 

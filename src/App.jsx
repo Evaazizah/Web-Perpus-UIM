@@ -5,6 +5,8 @@ import AuthModal from './pages/Auth';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminVerificationModal from './components/AdminVerificationModal';
 import UimLogo from './components/UimLogo';
+import VisitorCounterWidget from './components/VisitorCounterWidget';
+import { recordPageView } from './lib/visitorService';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { ShieldCheck, Sparkles, BookOpen, ExternalLink } from 'lucide-react';
 
@@ -15,6 +17,11 @@ export default function App() {
   const [currentView, setCurrentView] = useState('public'); // 'public' | 'admin'
   const [activeTab, setActiveTab] = useState('beranda');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Pelacakan Kunjungan Pengunjung (Visitor Counter SPA per navigasi tab/halaman)
+  useEffect(() => {
+    recordPageView(activeTab);
+  }, [activeTab, currentView]);
 
   // Listener autentikasi Supabase jika aktif
   useEffect(() => {
@@ -180,6 +187,11 @@ export default function App() {
                 Kode Kampus: 071064
               </div>
             </div>
+          </div>
+
+          {/* Widget Statistik Pengunjung Real-Time (Blueprint 5.B & Gap 2) */}
+          <div className="py-6 border-b border-emerald-900/60">
+            <VisitorCounterWidget variant="footer" />
           </div>
 
           <div className="pt-6 flex flex-col sm:flex-row items-center justify-between text-[11px] text-emerald-200/60 gap-3">

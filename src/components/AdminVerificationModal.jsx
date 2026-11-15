@@ -37,9 +37,9 @@ export default function AdminVerificationModal({ isOpen, onClose, onMembersUpdat
 
   if (!isOpen) return null;
 
-  const handleAction = (memberId, newStatus) => {
+  const handleAction = async (memberId, newStatus) => {
     try {
-      const updated = updateMemberStatus(memberId, newStatus);
+      const updated = await updateMemberStatus(memberId, newStatus);
       loadData();
       if (onMembersUpdated) onMembersUpdated();
 

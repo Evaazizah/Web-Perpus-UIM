@@ -1,19 +1,13 @@
-import { createClient } from '@supabase/supabase-js';
-
-// Ambil URL dan Key dari file .env
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://demo-placeholder.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'demo-anon-key';
-
-// Inisialisasi Supabase Client
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
 /**
- * Helper untuk memeriksa apakah kredensial Supabase sudah dikonfigurasi dengan benar
+ * ==============================================================================
+ * ARSIP: SUPABASE CLIENT (DIALIHKAN KE GOOGLE CLOUD FIRESTORE)
+ * ==============================================================================
+ * Sesuai Ketetapan Arsitektur:
+ * Cloud Firestore kini digunakan sebagai satu-satunya database utama portal perpustakaan.
+ * Modul ini diarsipkan untuk kompatibilitas ke belakang (backward compatibility).
  */
-export const isSupabaseConfigured = () => {
-  return (
-    import.meta.env.VITE_SUPABASE_URL &&
-    import.meta.env.VITE_SUPABASE_ANON_KEY &&
-    !import.meta.env.VITE_SUPABASE_URL.includes('your-project-id')
-  );
-};
+
+export const isSupabaseConfigured = () => false;
+export const supabase = null;
+export default null;
+

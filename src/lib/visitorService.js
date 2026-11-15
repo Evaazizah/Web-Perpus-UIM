@@ -1,39 +1,42 @@
 /**
  * ==============================================================================
- * LAYANAN PENGHITUNG PENGUNJUNG (VISITOR COUNTER SERVICE - SPA & OFFLINE-FIRST)
+ * LAYANAN PENGHITUNG PENGUNJUNG (VISITOR COUNTER SERVICE - FIRESTORE UTAMA)
  * ==============================================================================
- * Sesuai Dokumen Blueprint Pengembangan Bagian 5.B:
- * - Metode: Mengecek ID Sesi di Local Storage.
- * - Pencatatan: Membedakan Pengunjung Unik (Unique Visitor per hari) dan Kunjungan Halaman (Page Hits).
- * - Mendukung sinkronisasi backend/Supabase dengan resiliensi luring (offline-first).
+ * Sesuai Ketetapan Arsitektur Bagian G:
+ * - Menggunakan Cloud Firestore koleksi 'visitor_logs' & dokumen agregat 'visitor_stats/summary'.
+ * - TIDAK menggunakan angka acak (Math.random), angka contoh, atau data statis buatan.
+ * - Membedakan:
+ *   1. Total Kunjungan Halaman (Total Page Hits).
+ *   2. Pengunjung Unik Harian (Daily Unique Visitors per session).
+ *   3. Pengunjung Aktif berdasarkan sesi aktif (heartbeat / timestamp dalam 15 menit terakhir).
  */
 
-import { supabase, isSupabaseConfigured } from './supabase';
+import { db, isFirebaseConfigured } from './firebase';
+import {
+  doc,
+  setDoc,
+  getDoc,
+  addDoc,
+  collection,
+  onSnapshot,
+  serverTimestamp
+} from 'firebase/firestore';
 
-const SESSION_KEY = 'uim_digilib_visitor_session_v1';
-const LAST_DATE_KEY = 'uim_digilib_last_visit_date_v1';
-const STATS_KEY = 'uim_digilib_visitor_stats_v1';
+const SESSION_KEY = 'uim_digilib_visitor_session_v2';
+const LAST_DATE_KEY = 'uim_digilib_last_visit_date_v2';
+const LOCAL_STATS_KEY = 'uim_digilib_visitor_stats_v2';
 
-// Inisialisasi data statistik default
-const DEFAULT_STATS = {
+// Baseline awal riil (dimulai dari 0 atau angka terverifikasi)
+const BASE_STATS = {
   todayDate: new Date().toISOString().split('T')[0],
-  todayVisitors: 28,  // Baseline pengunjung aktif hari ini
-  todayHits: 142,     // Baseline halaman dilihat hari ini
-  totalVisitors: 12450, // Total civitas unik all-time
-  totalHits: 48920,   // Total hits seluruh halaman
-  activeOnline: 5,    // Pengunjung sedang aktif saat ini
-  history: [
-    { date: '2026-11-04', visitors: 112, hits: 430 },
-    { date: '2026-11-05', visitors: 145, hits: 520 },
-    { date: '2026-11-06', visitors: 98, hits: 390 },
-    { date: '2026-11-07', visitors: 120, hits: 450 },
-    { date: '2026-11-08', visitors: 85, hits: 280 },
-    { date: '2026-11-09', visitors: 134, hits: 490 },
-    { date: '2026-11-10', visitors: 28, hits: 142 }
-  ]
+  todayVisitors: 1,
+  todayHits: 1,
+  totalVisitors: 1,
+  totalHits: 1,
+  activeOnline: 1,
+  activeSessions: {}
 };
 
-// Observers callback list untuk reactive UI updates
 const listeners = new Set();
 
 /**
@@ -53,119 +56,161 @@ export function getOrCreateSessionId() {
 }
 
 /**
- * Mengambil ringkasan statistik pengunjung
+ * Mengambil ringkasan statistik pengunjung dari cache lokal
  */
 export function getVisitorStats() {
   try {
-    const raw = localStorage.getItem(STATS_KEY);
+    const raw = localStorage.getItem(LOCAL_STATS_KEY);
     if (!raw) {
-      saveStats(DEFAULT_STATS);
-      return DEFAULT_STATS;
+      localStorage.setItem(LOCAL_STATS_KEY, JSON.stringify(BASE_STATS));
+      return BASE_STATS;
     }
     const stats = JSON.parse(raw);
     const today = new Date().toISOString().split('T')[0];
 
-    // Reset hitungan harian jika berganti hari
+    // Reset hitungan harian jika hari telah berganti
     if (stats.todayDate !== today) {
-      if (stats.todayVisitors > 0 || stats.todayHits > 0) {
-        stats.history = stats.history || [];
-        stats.history.push({
-          date: stats.todayDate,
-          visitors: stats.todayVisitors,
-          hits: stats.todayHits
-        });
-        if (stats.history.length > 14) stats.history.shift(); // simpan 14 hari terakhir
-      }
       stats.todayDate = today;
-      stats.todayVisitors = 1;
-      stats.todayHits = 1;
-      saveStats(stats);
+      stats.todayVisitors = 0;
+      stats.todayHits = 0;
+      saveLocalStats(stats);
     }
 
-    // Estimasi acak realistis untuk pengguna online saat ini (3 - 8 pengguna aktif)
-    stats.activeOnline = Math.max(3, Math.min(12, Math.floor(Math.random() * 6) + 3));
     return stats;
   } catch (e) {
-    return DEFAULT_STATS;
+    return BASE_STATS;
   }
 }
 
-/**
- * Menyimpan statistik ke LocalStorage dan memberi tahu observer
- */
-function saveStats(stats) {
+function saveLocalStats(stats) {
   try {
-    localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+    localStorage.setItem(LOCAL_STATS_KEY, JSON.stringify(stats));
     listeners.forEach((fn) => {
       try {
         fn(stats);
-      } catch (err) {
-        console.error('Visitor listener error:', err);
-      }
+      } catch (err) {}
     });
-  } catch (e) {
-    console.warn('Gagal menyimpan visitor stats ke localStorage', e);
-  }
+  } catch (e) {}
 }
 
 /**
- * Mencatat Kunjungan Halaman (Page View / Page Hit)
- * @param {string} path - URL atau tab yang dikunjungi (misal: '/', 'katalog', 'detail-buku')
+ * Mencatat Kunjungan Halaman Nyata ke Cloud Firestore
+ * @param {string} path - URL atau tab yang sedang dikunjungi
  */
 export async function recordPageView(path = '/') {
   const sessionId = getOrCreateSessionId();
   const today = new Date().toISOString().split('T')[0];
   const lastVisitDate = localStorage.getItem(LAST_DATE_KEY);
+  const nowMs = Date.now();
 
-  const stats = getVisitorStats();
-  let isUniqueToday = false;
-
-  // 1. Catat Hit Halaman
-  stats.todayHits = (stats.todayHits || 0) + 1;
-  stats.totalHits = (stats.totalHits || 0) + 1;
-
-  // 2. Evaluasi Unique Visitor (Apakah pengguna ini baru pertama kali mengunjungi portal hari ini?)
-  if (lastVisitDate !== today) {
-    isUniqueToday = true;
-    stats.todayVisitors = (stats.todayVisitors || 0) + 1;
-    stats.totalVisitors = (stats.totalVisitors || 0) + 1;
+  const isUniqueToday = lastVisitDate !== today;
+  if (isUniqueToday) {
     localStorage.setItem(LAST_DATE_KEY, today);
   }
 
-  saveStats(stats);
+  // 1. Perbarui Statistik Lokal
+  const stats = getVisitorStats();
+  stats.todayHits = (stats.todayHits || 0) + 1;
+  stats.totalHits = (stats.totalHits || 0) + 1;
 
-  // 3. Sinkronisasi Asinkron ke Supabase / Backend API (Jika aktif)
-  if (isSupabaseConfigured()) {
+  if (isUniqueToday) {
+    stats.todayVisitors = (stats.todayVisitors || 0) + 1;
+    stats.totalVisitors = (stats.totalVisitors || 0) + 1;
+  }
+
+  // Rekam sesi aktif saat ini
+  stats.activeSessions = stats.activeSessions || {};
+  stats.activeSessions[sessionId] = nowMs;
+
+  // Bersihkan sesi aktif yang sudah lebih dari 15 menit (heartbeat window)
+  const fifteenMinutesAgo = nowMs - 15 * 60 * 1000;
+  Object.keys(stats.activeSessions).forEach((sId) => {
+    if (stats.activeSessions[sId] < fifteenMinutesAgo) {
+      delete stats.activeSessions[sId];
+    }
+  });
+  stats.activeOnline = Math.max(1, Object.keys(stats.activeSessions).length);
+
+  saveLocalStats(stats);
+
+  // 2. Catat Log ke Cloud Firestore jika aktif
+  if (isFirebaseConfigured() && db) {
     try {
-      const hashedIp = 'hash_' + sessionId.substring(sessionId.length - 8);
-      await supabase.from('visitor_logs').insert([
-        {
-          session_id: sessionId,
-          hashed_ip: hashedIp,
-          path: String(path),
-          is_unique_today: isUniqueToday,
-          visit_date: today
-        }
-      ]);
+      // a. Tambahkan log riwayat
+      const logsRef = collection(db, 'visitor_logs');
+      await addDoc(logsRef, {
+        session_id: sessionId,
+        path: String(path || '/'),
+        visit_date: today,
+        is_unique_today: isUniqueToday,
+        created_at: new Date().toISOString()
+      });
+
+      // b. Sinkronisasi dokumen agregat 'visitor_stats/summary'
+      const summaryDocRef = doc(db, 'visitor_stats', 'summary');
+      const snap = await getDoc(summaryDocRef);
+
+      if (snap.exists()) {
+        const firestoreData = snap.data();
+        const firestoreToday = firestoreData.todayDate === today ? firestoreData.todayHits || 0 : 0;
+        const firestoreTodayVisitors = firestoreData.todayDate === today ? firestoreData.todayVisitors || 0 : 0;
+
+        const updatedSessions = firestoreData.activeSessions || {};
+        updatedSessions[sessionId] = nowMs;
+        // Purge expired
+        Object.keys(updatedSessions).forEach((sId) => {
+          if (updatedSessions[sId] < fifteenMinutesAgo) delete updatedSessions[sId];
+        });
+
+        const mergedStats = {
+          todayDate: today,
+          todayHits: firestoreToday + 1,
+          todayVisitors: isUniqueToday ? firestoreTodayVisitors + 1 : firestoreTodayVisitors,
+          totalHits: (firestoreData.totalHits || 0) + 1,
+          totalVisitors: isUniqueToday ? (firestoreData.totalVisitors || 0) + 1 : (firestoreData.totalVisitors || 0),
+          activeOnline: Math.max(1, Object.keys(updatedSessions).length),
+          activeSessions: updatedSessions,
+          updated_at: new Date().toISOString()
+        };
+
+        await setDoc(summaryDocRef, mergedStats, { merge: true });
+        saveLocalStats(mergedStats);
+      } else {
+        await setDoc(summaryDocRef, stats);
+      }
     } catch (err) {
-      // Abaikan galat jaringan - resiliensi offline first
+      console.warn('Gagal sinkron visitor stats ke Firestore (tersimpan di lokal):', err);
     }
   }
 
-  return {
-    isUniqueToday,
-    stats
-  };
+  return { isUniqueToday, stats };
 }
 
 /**
- * Berlangganan (subscribe) terhadap perubahan angka statistik pengunjung
- * @param {Function} callback - fungsi listener yang dipanggil saat stats berubah
- * @returns {Function} unsubscribe function
+ * Berlangganan (Real-time listener) terhadap pembaruan statistik pengunjung
  */
 export function subscribeVisitorStats(callback) {
   listeners.add(callback);
   callback(getVisitorStats());
-  return () => listeners.delete(callback);
-}
 
+  if (!isFirebaseConfigured() || !db) {
+    return () => listeners.delete(callback);
+  }
+
+  try {
+    const summaryDocRef = doc(db, 'visitor_stats', 'summary');
+    const unsubFirestore = onSnapshot(summaryDocRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        saveLocalStats(data);
+      }
+    }, () => {});
+
+    return () => {
+      listeners.delete(callback);
+      unsubFirestore();
+    };
+  } catch (e) {
+    return () => listeners.delete(callback);
+  }
+}

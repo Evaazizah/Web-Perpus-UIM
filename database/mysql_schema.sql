@@ -1,7 +1,17 @@
 -- ==============================================================================
--- SKEMA BASIS DATA RESMI: PORTAL PERPUSTAKAAN UNIVERSITAS ISLAM MADURA (UIM)
--- Sesuai Blueprint Fokus 1 (Bagian 6.B) & Analisis Kesenjangan Riset (Gap 1, 2, 3)
--- Target RDBMS: MySQL 8.0+ / MariaDB 10.5+
+-- [ARSIP / RANCANGAN TERDAHULU] SKEMA BASIS DATA MYSQL
+-- ==============================================================================
+-- PERHATIAN:
+-- Database utama proyek ini telah dialihkan sepenuhnya ke GOOGLE CLOUD FIRESTORE
+-- (Proyek: uim-digilib) sesuai ketetapan arsitektur Single Source of Truth.
+-- Skema resmi Cloud Firestore dapat dilihat pada:
+-- 1. database/FIRESTORE_DATABASE_SCHEMA.md
+-- 2. database/firestore_collections.json
+-- 3. firestore.rules
+-- 
+-- Berkas MySQL ini diarsipkan semata-mata sebagai referensi rancangan relasional
+-- terdahulu (Blueprint Fokus 1 Bagian 6.B). Jangan dieksekusi atau dijadikan
+-- ketergantungan runtime aplikasi aktif.
 -- ==============================================================================
 
 SET FOREIGN_KEY_CHECKS = 0;

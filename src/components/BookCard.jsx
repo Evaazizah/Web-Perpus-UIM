@@ -4,13 +4,13 @@ import {
   BookmarkPlus,
   CheckCircle2,
   BookMarked,
+  BookmarkCheck,
   Eye,
   Calendar,
   Layers,
   MapPin,
   X,
   Share2,
-  Sparkles,
   Trash2
 } from 'lucide-react';
 
@@ -22,7 +22,9 @@ export default function BookCard({
   isBorrowed,
   isRecommendation = false,
   isAdmin = false,
-  onDeleteBook
+  onDeleteBook,
+  isBookmarked = false,
+  onToggleBookmark
 }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [hoverRating, setHoverRating] = useState(0);
@@ -33,17 +35,17 @@ export default function BookCard({
   return (
     <>
       <div
-        className={`group bg-white rounded-2xl overflow-hidden flex flex-col transition-all duration-300 hover:shadow-2xl hover:-translate-y-1.5 border relative ${
+        className={`group bg-white rounded-2xl overflow-hidden flex flex-col transition-all duration-300 hover:shadow-lg hover:-translate-y-1 border relative ${
           isRecommendation
-            ? 'border-emerald-400 ring-2 ring-emerald-400/20 shadow-lg'
-            : 'border-slate-200/90 shadow-sm hover:border-[#047857]'
+            ? 'border-emerald-500/60 ring-1 ring-emerald-500/30 shadow-md'
+            : 'border-slate-200 hover:border-[#047857]/60 shadow-xs'
         }`}
       >
         {/* Top Recommendation Ribbon */}
         {isRecommendation && (
-          <div className="absolute top-0 right-0 z-20 bg-gradient-to-l from-emerald-600 to-[#047857] text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl shadow-md flex items-center gap-1">
-            <Sparkles className="w-3 h-3 text-amber-300" />
-            <span>Rekomendasi Pustaka</span>
+          <div className="absolute top-0 right-0 z-20 bg-emerald-800 text-white text-[10px] font-semibold px-2.5 py-0.5 rounded-bl-lg shadow-xs flex items-center gap-1">
+            <BookmarkCheck className="w-3 h-3 text-amber-300" />
+            <span>Rekomendasi Pilihan</span>
           </div>
         )}
 
@@ -162,29 +164,46 @@ export default function BookCard({
               </div>
             </div>
 
-            {/* Borrow Button */}
-            <button
-              type="button"
-              onClick={() => onBorrowBook(book.id)}
-              disabled={isBorrowed}
-              className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm ${
-                isBorrowed
-                  ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-                  : 'bg-[#047857] hover:bg-[#064e3b] text-white hover:shadow-md active:scale-98'
-              }`}
-            >
-              {isBorrowed ? (
-                <>
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Buku Telah Dipinjam</span>
-                </>
-              ) : (
-                <>
-                  <BookmarkPlus className="w-3.5 h-3.5" />
-                  <span>Pinjam Buku Ini</span>
-                </>
+            {/* Borrow & Bookmark Buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => onBorrowBook(book.id)}
+                disabled={isBorrowed}
+                className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm ${
+                  isBorrowed
+                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                    : 'bg-[#047857] hover:bg-[#064e3b] text-white hover:shadow-md active:scale-98'
+                }`}
+              >
+                {isBorrowed ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Telah Dipinjam</span>
+                  </>
+                ) : (
+                  <>
+                    <BookmarkPlus className="w-3.5 h-3.5" />
+                    <span>Pinjam Buku</span>
+                  </>
+                )}
+              </button>
+
+              {onToggleBookmark && (
+                <button
+                  type="button"
+                  onClick={() => onToggleBookmark(book)}
+                  title={isBookmarked ? 'Hapus dari daftar favorit' : 'Simpan ke buku favorit'}
+                  className={`p-2.5 rounded-xl border transition-all ${
+                    isBookmarked
+                      ? 'bg-amber-50 border-amber-300 text-amber-600 shadow-xs'
+                      : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-amber-500 hover:bg-amber-50'
+                  }`}
+                >
+                  <BookMarked className={`w-4 h-4 ${isBookmarked ? 'fill-amber-500 text-amber-500' : ''}`} />
+                </button>
               )}
-            </button>
+            </div>
           </div>
         </div>
       </div>
@@ -239,11 +258,13 @@ export default function BookCard({
                   </div>
                   <div>
                     <span className="text-slate-400 block text-[10px] uppercase font-bold">Lokasi Rak</span>
-                    <span className="font-semibold text-slate-700">Rak A1 - Perpustakaan UIM</span>
+                    <span className="font-semibold text-slate-700">{book.lokasi_rak || 'Rak Koleksi UIM'}</span>
                   </div>
                   <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Terakhir Diperbarui</span>
-                    <span className="font-semibold text-slate-700">{book.updatedAt || 'Terbaru'}</span>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Penerbit & Tahun</span>
+                    <span className="font-semibold text-slate-700">
+                      {book.penerbit || 'UPT Perpustakaan UIM'} ({book.tahun || book.tahun_terbit || new Date().getFullYear()})
+                    </span>
                   </div>
                 </div>
 

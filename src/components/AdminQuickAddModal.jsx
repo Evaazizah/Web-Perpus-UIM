@@ -14,13 +14,13 @@ export default function AdminQuickAddModal({ isOpen, onClose, onBookAdded }) {
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!judul.trim() || !penulis.trim()) return;
 
     setLoading(true);
     try {
-      const newBook = addBibliografi({
+      const newBook = await addBibliografi({
         judul: judul.trim(),
         penulis: penulis.trim(),
         kategori,

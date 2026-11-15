@@ -3,138 +3,60 @@ import {
   Compass,
   ArrowRight,
   BookMarked,
-  Sparkles,
+  BookOpen,
+  Scale,
+  Cpu,
+  Languages,
+  LayoutGrid,
   Check,
   X,
   Library,
   ChevronRight
 } from 'lucide-react';
 
-// Ikon 1: Kesusastraan (Buku bertumpuk + Apel Merah)
-function LiteratureIcon() {
-  return (
-    <svg className="w-12 h-12" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="10" y="44" width="44" height="8" rx="2" fill="#bae6fd" stroke="#0284c7" strokeWidth="1.5" />
-      <line x1="16" y1="48" x2="48" y2="48" stroke="#0284c7" strokeWidth="1.2" strokeLinecap="round" />
-      <rect x="12" y="36" width="40" height="8" rx="2" fill="#fef08a" stroke="#eab308" strokeWidth="1.5" />
-      <line x1="18" y1="40" x2="44" y2="40" stroke="#ca8a04" strokeWidth="1.2" strokeLinecap="round" />
-      <rect x="14" y="28" width="36" height="8" rx="2" fill="#fed7aa" stroke="#f97316" strokeWidth="1.5" />
-      <line x1="20" y1="32" x2="42" y2="32" stroke="#ea580c" strokeWidth="1.2" strokeLinecap="round" />
-      <circle cx="32" cy="18" r="6.5" fill="#ef4444" stroke="#dc2626" strokeWidth="1" />
-      <path d="M32 12 Q33 9 35 7" stroke="#78350f" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M33 9 Q38 7 39 10 Q36 11 33 9 Z" fill="#22c55e" />
-    </svg>
-  );
-}
-
-// Ikon 2: Ilmu-ilmu Sosial (Sertifikat / Gulungan Dokumen dengan Pita Segel)
-function SocialSciencesIcon() {
-  return (
-    <svg className="w-12 h-12" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="14" y="10" width="36" height="44" rx="4" fill="#ffffff" stroke="#0284c7" strokeWidth="2" />
-      <line x1="20" y1="18" x2="44" y2="18" stroke="#cbd5e1" strokeWidth="2" strokeLinecap="round" />
-      <line x1="20" y1="24" x2="44" y2="24" stroke="#cbd5e1" strokeWidth="2" strokeLinecap="round" />
-      <line x1="20" y1="30" x2="38" y2="30" stroke="#cbd5e1" strokeWidth="2" strokeLinecap="round" />
-      <line x1="20" y1="36" x2="32" y2="36" stroke="#cbd5e1" strokeWidth="2" strokeLinecap="round" />
-      <circle cx="38" cy="42" r="5" fill="#38bdf8" stroke="#0284c7" strokeWidth="1.5" />
-      <path d="M36 46 L33 53 L38 50 L43 53 L40 46" fill="#38bdf8" stroke="#0284c7" strokeWidth="1" />
-    </svg>
-  );
-}
-
-// Ikon 3: Ilmu-ilmu Terapan (Papan Tulis / Layar Proyektor E=mc²)
-function AppliedSciencesIcon() {
-  return (
-    <svg className="w-12 h-12" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="10" y="10" width="44" height="30" rx="3" fill="#dcfce7" stroke="#16a34a" strokeWidth="2" />
-      <text
-        x="32"
-        y="29"
-        fill="#15803d"
-        fontSize="11"
-        fontWeight="bold"
-        textAnchor="middle"
-        fontFamily="sans-serif"
-      >
-        E=mc²
-      </text>
-      <line x1="32" y1="40" x2="32" y2="51" stroke="#64748b" strokeWidth="2.5" />
-      <line x1="32" y1="51" x2="21" y2="58" stroke="#64748b" strokeWidth="2" strokeLinecap="round" />
-      <line x1="32" y1="51" x2="43" y2="58" stroke="#64748b" strokeWidth="2" strokeLinecap="round" />
-      <line x1="32" y1="51" x2="32" y2="58" stroke="#64748b" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-// Ikon 4: Kesenian, Hiburan, dan Olahraga (Botol Tinta + Pena Bulu)
-function ArtsIcon() {
-  return (
-    <svg className="w-12 h-12" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="14" y="32" width="20" height="18" rx="4" fill="#fed7aa" stroke="#ea580c" strokeWidth="2" />
-      <rect x="18" y="28" width="12" height="4" rx="1.5" fill="#ffedd5" stroke="#ea580c" strokeWidth="1.5" />
-      <ellipse cx="24" cy="41" rx="5" ry="4" fill="#fb923c" opacity="0.6" />
-      <path
-        d="M25 32 Q34 20 46 8 C48 16 46 27 37 34 Q31 38 26 35 Z"
-        fill="#fef08a"
-        stroke="#ca8a04"
-        strokeWidth="1.5"
-      />
-      <line x1="25" y1="34" x2="44" y2="10" stroke="#a16207" strokeWidth="1.2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-// Ikon 5: lihat lainnya... (9 Titik Kotak)
-function ViewMoreIcon() {
-  return (
-    <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 group-hover:bg-[#047857] group-hover:text-white transition-colors">
-      <div className="grid grid-cols-3 gap-1">
-        {[...Array(9)].map((_, i) => (
-          <div key={i} className="w-1.5 h-1.5 rounded-full bg-current" />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export default function SubjectCards({ selectedCategory, onSelectCategory }) {
   const [isDdcModalOpen, setIsDdcModalOpen] = useState(false);
 
   const subjects = [
     {
-      title: 'Kesusastraan',
-      sub: 'Sastra, Fiksi & Puisi',
-      filterVal: 'Kesusastraan',
-      icon: <LiteratureIcon />,
-      colorGlow: 'hover:border-amber-300'
+      title: 'Agama & Keislaman',
+      ddc: 'DDC 200',
+      sub: 'Al-Qur’an, Hadits, Fiqih & Dakwah',
+      filterVal: 'Agama',
+      icon: <BookOpen className="w-7 h-7 text-[#047857]" />,
+      iconBg: 'bg-emerald-50 text-[#047857] border-emerald-100'
     },
     {
-      title: 'Ilmu-ilmu Sosial',
-      sub: 'Hukum, Sosiologi & Politik',
+      title: 'Ilmu-ilmu Sosial & Hukum',
+      ddc: 'DDC 300',
+      sub: 'Hukum Islam, Ekonomi & Politik',
       filterVal: 'Ilmu-ilmu Sosial',
-      icon: <SocialSciencesIcon />,
-      colorGlow: 'hover:border-sky-300'
+      icon: <Scale className="w-7 h-7 text-sky-600" />,
+      iconBg: 'bg-sky-50 text-sky-600 border-sky-100'
     },
     {
-      title: 'Ilmu-ilmu Terapan',
-      sub: 'Teknik, IT & Medis',
+      title: 'Ilmu Terapan & Teknologi',
+      ddc: 'DDC 600',
+      sub: 'Teknik Informatika & Pertanian',
       filterVal: 'Ilmu-ilmu Terapan',
-      icon: <AppliedSciencesIcon />,
-      colorGlow: 'hover:border-emerald-300'
+      icon: <Cpu className="w-7 h-7 text-teal-600" />,
+      iconBg: 'bg-teal-50 text-teal-600 border-teal-100'
     },
     {
-      title: 'Kesenian, Hiburan, dan Olahraga',
-      sub: 'Seni, Arsitektur & Olahraga',
-      filterVal: 'Kesenian, Hiburan, dan Olahraga',
-      icon: <ArtsIcon />,
-      colorGlow: 'hover:border-orange-300'
+      title: 'Kesusastraan & Bahasa',
+      ddc: 'DDC 400 & 800',
+      sub: 'Bahasa Arab, Inggris & Sastra',
+      filterVal: 'Kesusastraan',
+      icon: <Languages className="w-7 h-7 text-amber-600" />,
+      iconBg: 'bg-amber-50 text-amber-600 border-amber-100'
     },
     {
-      title: 'Lihat Semua Subjek',
-      sub: '10 Kelas Klasifikasi DDC',
+      title: 'Seluruh Klasifikasi DDC',
+      ddc: 'SLiMS 9.8.0',
+      sub: '10 Kelas Klasifikasi SLiMS',
       filterVal: 'ALL_MODAL',
-      icon: <ViewMoreIcon />,
-      colorGlow: 'hover:border-[#047857]'
+      icon: <LayoutGrid className="w-7 h-7 text-indigo-600" />,
+      iconBg: 'bg-indigo-50 text-indigo-600 border-indigo-100'
     }
   ];
 
@@ -177,15 +99,15 @@ export default function SubjectCards({ selectedCategory, onSelectCategory }) {
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
         <div className="text-center max-w-2xl mx-auto mb-10">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/80 text-[#047857] text-xs font-bold tracking-wide uppercase mb-2">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/80 text-[#047857] text-xs font-semibold tracking-wide uppercase mb-2">
             <Compass className="w-3.5 h-3.5" />
-            <span>Eksplorasi Keilmuan</span>
+            <span>Kategori Disiplin Ilmu</span>
           </div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-            Pilih Subjek yang Menarik bagi Anda
+          <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+            Eksplorasi Berdasarkan Subjek Keilmuan
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 mt-2">
-            Temukan koleksi pustaka terkurasi berdasarkan rumpun disiplin ilmu akademik
+            Penelusuran koleksi pustaka terstruktur mengacu pada standar Dewey Decimal Classification (DDC) SLiMS 9.8.0 Bulian
           </p>
         </div>
 
@@ -199,8 +121,8 @@ export default function SubjectCards({ selectedCategory, onSelectCategory }) {
                 onClick={() => handleCardClick(subj)}
                 className={`group relative bg-white rounded-2xl p-4 sm:p-5 flex flex-col items-center text-center cursor-pointer transition-all duration-300 border ${
                   isSelected
-                    ? 'border-[#047857] ring-2 ring-[#047857]/30 shadow-xl -translate-y-1 bg-emerald-50/20'
-                    : 'border-slate-200/80 hover:border-[#047857]/50 shadow-sm hover:shadow-xl hover:-translate-y-1'
+                    ? 'border-[#047857] ring-2 ring-[#047857]/20 shadow-lg -translate-y-1 bg-emerald-50/20'
+                    : 'border-slate-200 hover:border-[#047857]/40 shadow-xs hover:shadow-md hover:-translate-y-1'
                 }`}
               >
                 {/* Active Indicator Badge */}
@@ -210,8 +132,13 @@ export default function SubjectCards({ selectedCategory, onSelectCategory }) {
                   </div>
                 )}
 
-                {/* Icon Container with Subtle Float */}
-                <div className="h-16 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300">
+                {/* DDC Classification Badge */}
+                <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-500 mb-3">
+                  {subj.ddc}
+                </span>
+
+                {/* Modern Icon Container */}
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-3 border transition-transform duration-300 group-hover:scale-105 ${subj.iconBg}`}>
                   {subj.icon}
                 </div>
 
@@ -243,66 +170,63 @@ export default function SubjectCards({ selectedCategory, onSelectCategory }) {
         </div>
       </div>
 
-      {/* Modal Daftar Lengkap Klasifikasi DDC */}
+      {/* Modal 10 Kelas DDC SLiMS 9.8.0 Bulian */}
       {isDdcModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 max-h-[90vh] flex flex-col border border-slate-100">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-7 shadow-2xl border border-slate-100 max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-[#047857] flex items-center justify-center">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-[#047857] flex items-center justify-center">
                   <Library className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-slate-900 text-base">
-                    Klasifikasi Subjek Dewey Decimal (DDC)
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900">
+                    10 Kelas Utama Dewey Decimal Classification (DDC)
                   </h3>
-                  <p className="text-xs text-slate-500">Pilih rumpun keilmuan untuk menyaring katalog buku</p>
+                  <p className="text-xs text-slate-500">
+                    Standar klasifikasi penataan rak buku SLiMS 9.8.0 Bulian Perpustakaan UIM
+                  </p>
                 </div>
               </div>
               <button
                 onClick={() => setIsDdcModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
+                className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto py-4 space-y-2">
-              {ddcClasses.map((ddc) => (
-                <button
-                  key={ddc.code}
-                  onClick={() => handleSelectDdc(ddc.name)}
-                  className="w-full text-left p-3.5 rounded-xl border border-slate-200/80 hover:border-[#047857] hover:bg-emerald-50/40 transition-all flex items-center justify-between group"
+            <div className="py-4 overflow-y-auto space-y-2 flex-1 pr-1">
+              {ddcClasses.map((item) => (
+                <div
+                  key={item.code}
+                  onClick={() => handleSelectDdc(item.name.split(',')[0])}
+                  className="p-3 rounded-xl border border-slate-200/80 hover:border-[#047857] hover:bg-emerald-50/30 transition-all flex items-center justify-between cursor-pointer group"
                 >
                   <div className="flex items-center gap-3">
-                    <span className="px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 font-mono text-xs font-bold group-hover:bg-[#047857] group-hover:text-white transition-colors">
-                      {ddc.code}
+                    <span className="font-mono font-bold text-xs sm:text-sm px-2.5 py-1 rounded-lg bg-slate-100 group-hover:bg-[#047857] group-hover:text-white transition-colors text-slate-700">
+                      {item.code}
                     </span>
                     <div>
-                      <p className="text-xs sm:text-sm font-bold text-slate-800 group-hover:text-[#047857]">
-                        {ddc.name}
-                      </p>
-                      <p className="text-[11px] text-slate-400">{ddc.count}</p>
+                      <h4 className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-[#047857] transition-colors">
+                        {item.name}
+                      </h4>
+                      <span className="text-[11px] text-slate-400 font-mono">
+                        {item.count}
+                      </span>
                     </div>
                   </div>
-                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-[#047857] group-hover:translate-x-1 transition-all" />
-                </button>
+                  <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-[#047857] group-hover:translate-x-0.5 transition-all" />
+                </div>
               ))}
             </div>
 
-            <div className="pt-3 border-t border-slate-100 flex justify-end">
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+              <span>Klik salah satu kelas untuk menyaring katalog buku</span>
               <button
-                onClick={() => {
-                  onSelectCategory('Semua');
-                  setIsDdcModalOpen(false);
-                }}
-                className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg mr-2"
-              >
-                Tampilkan Semua Subjek
-              </button>
-              <button
+                type="button"
                 onClick={() => setIsDdcModalOpen(false)}
-                className="px-4 py-2 bg-[#047857] text-white text-xs font-bold rounded-lg shadow-sm hover:bg-[#064e3b]"
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs"
               >
                 Tutup
               </button>

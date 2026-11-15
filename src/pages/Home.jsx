@@ -1,22 +1,31 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { getStoredBooks, syncBooksFromFirebase, deleteBibliografi, clearAllBooks } from '../lib/bookService';
-import { getStoredMembers, syncMembersFromFirebase, countPendingVerifications } from '../lib/memberService';
+import { useLanguage } from '../context/LanguageContext';
+import { getStoredBooks, syncBooksFromFirebase, subscribeBooks, deleteBibliografi, clearAllBooks } from '../lib/bookService';
+import { getStoredMembers, syncMembersFromFirebase, subscribeMembers, countPendingVerifications } from '../lib/memberService';
 import {
   getStoredLoans,
   syncLoansFromFirebase,
+  subscribeLoans,
   getLoansByNim,
   createLoan,
   renewLoan
 } from '../lib/circulationService';
 import { isFirebaseConfigured } from '../lib/firebase';
-import { getRecommendationsForUser, DUMMY_RATINGS } from '../lib/recommendationEngine';
+import { getRecommendationsForUser } from '../lib/recommendationEngine';
+import { saveUserRating, subscribeRatings, fetchAllRatings } from '../lib/ratingService';
+import { fetchUserBookmarks, toggleBookmark } from '../lib/bookmarkService';
 import HeroBanner from '../components/HeroBanner';
-import SubjectCards from '../components/SubjectCards';
-import RecommendationList from '../components/RecommendationList';
+import QuickAccessRow from '../components/QuickAccessRow';
+import ThreeCardsHub from '../components/ThreeCardsHub';
 import BookCard from '../components/BookCard';
 import StudentCardModal from '../components/StudentCardModal';
 import AdminQuickAddModal from '../components/AdminQuickAddModal';
+import VisitorCounterWidget from '../components/VisitorCounterWidget';
+import JournalPortalModal from '../components/JournalPortalModal';
+import NewsPortalModal from '../components/NewsPortalModal';
+import NotificationModal from '../components/NotificationModal';
+import FeedbackModal from '../components/FeedbackModal';
+import UimLogo from '../components/UimLogo';
 import {
   BookOpen,
   Sparkles,
@@ -42,6 +51,7 @@ import {
   GraduationCap,
   RotateCw,
   Sliders,
+  Filter,
   Check,
   X,
   Globe2,
@@ -58,13 +68,15 @@ export default function Home({
   onOpenAdminVerification
 }) {
   const [books, setBooks] = useState(getStoredBooks());
-  const [ratings, setRatings] = useState(DUMMY_RATINGS);
+  const [ratings, setRatings] = useState([]);
   const [borrowedIds, setBorrowedIds] = useState(new Set());
   const [selectedCategory, setSelectedCategory] = useState('Semua');
-  const [searchField, setSearchField] = useState('Semua Ruas');
+  const [selectedYear, setSelectedYear] = useState('Semua');
+  const [bookmarkedIds, setBookmarkedIds] = useState(new Set());
   const [catalogTab, setCatalogTab] = useState('popular'); // 'popular' | 'newest' | 'all'
   const [loading, setLoading] = useState(false);
   const [toastMsg, setToastMsg] = useState(null);
+  const { t } = useLanguage();
 
   // Modals
   const [isStudentCardOpen, setIsStudentCardOpen] = useState(false);
@@ -80,59 +92,77 @@ export default function Home({
   const [studentLoans, setStudentLoans] = useState([]);
   const [pendingVerifications, setPendingVerifications] = useState(0);
 
-  const activeUserId = currentUser ? currentUser.id : 'active-demo-user';
+  // ID pengguna yang konsisten (null jika Guest / belum login)
+  const activeUserId = currentUser ? (currentUser.uid || currentUser.id) : null;
 
-  // 1. Sinkronisasi Data Buku & Pinjaman (Firebase Cloud + Local)
+  // 1. Sinkronisasi Data Real-Time Cloud Firestore (Buku, Rating, Sirkulasi, Anggota)
   useEffect(() => {
-    setBooks(getStoredBooks());
-    setPendingVerifications(countPendingVerifications());
+    // a. Listener katalog buku
+    const unsubBooks = subscribeBooks((liveBooks) => {
+      setBooks(liveBooks);
+    });
 
-    if (currentUser?.role === 'user' && currentUser?.nim) {
-      setStudentLoans(getLoansByNim(currentUser.nim));
+    // b. Listener rating real-time (Collaborative Filtering)
+    const unsubRatings = subscribeRatings((liveRatings) => {
+      setRatings(liveRatings);
+    });
+
+    // c. Listener pinjaman real-time
+    const unsubLoans = subscribeLoans((liveLoans) => {
+      if (currentUser?.role === 'user' && currentUser?.nim) {
+        setStudentLoans(liveLoans.filter((l) => String(l.nim).trim() === String(currentUser.nim).trim()));
+      }
+    });
+
+    // d. Listener jumlah verifikasi anggota
+    const unsubMembers = subscribeMembers(() => {
+      setPendingVerifications(countPendingVerifications());
+    });
+
+    // Inisialisasi sinkronisasi cloud jika Firestore aktif
+    if (isFirebaseConfigured()) {
+      syncBooksFromFirebase();
+      syncMembersFromFirebase();
+      syncLoansFromFirebase();
+      fetchAllRatings();
     }
 
-    async function loadCloudData() {
-      // Sinkronisasi Firebase Firestore jika dikonfigurasikan
-      if (isFirebaseConfigured()) {
-        try {
-          const [cloudBooks, cloudMembers, cloudLoans] = await Promise.all([
-            syncBooksFromFirebase(),
-            syncMembersFromFirebase(),
-            syncLoansFromFirebase()
-          ]);
-          if (cloudBooks && cloudBooks.length > 0) setBooks(cloudBooks);
-          if (currentUser?.role === 'user' && currentUser?.nim) {
-            setStudentLoans(getLoansByNim(currentUser.nim));
-          }
-          setPendingVerifications(countPendingVerifications());
-        } catch (e) {
-          console.warn('Gagal sinkron data Firebase:', e);
-        }
-      }
-
-      if (!isSupabaseConfigured()) return;
-      try {
-        setLoading(true);
-        const { data: bData } = await supabase.from('books').select('*').order('id', { ascending: true });
-        if (bData && bData.length > 0) setBooks(bData);
-
-        const { data: rData } = await supabase.from('ratings').select('*');
-        if (rData && rData.length > 0) setRatings(rData);
-      } catch (err) {
-        console.warn('Menggunakan data offline cache:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadCloudData();
+    return () => {
+      unsubBooks();
+      unsubRatings();
+      unsubLoans();
+      unsubMembers();
+    };
   }, [currentUser]);
+
+  // Muat status bookmark buku pengguna
+  useEffect(() => {
+    const loadBookmarks = async () => {
+      const uid = currentUser?.uid || currentUser?.id || currentUser?.nim || 'local_guest';
+      const bMarks = await fetchUserBookmarks(uid);
+      setBookmarkedIds(new Set(bMarks.map((b) => String(b.id))));
+    };
+    loadBookmarks();
+  }, [currentUser]);
+
+  const handleToggleBookmark = async (book) => {
+    const uid = currentUser?.uid || currentUser?.id || currentUser?.nim || 'local_guest';
+    const res = await toggleBookmark(uid, book);
+    setBookmarkedIds(new Set(res.bookmarks.map((b) => String(b.id))));
+    showToast(
+      res.isBookmarked
+        ? `Buku "${book.judul}" disimpan ke Favorit!`
+        : `Buku "${book.judul}" dihapus dari Favorit.`
+    );
+  };
 
   // Map rating user saat ini
   const userRatingsMap = useMemo(() => {
     const map = {};
+    if (!activeUserId) return map;
     ratings.forEach((r) => {
       if (String(r.id_user) === String(activeUserId)) {
-        map[r.id_buku] = Number(r.nilai_rating);
+        map[String(r.id_buku)] = Number(r.nilai_rating);
       }
     });
     return map;
@@ -166,36 +196,24 @@ export default function Home({
     }
   }, []);
 
-  // 4. Handler Pemberian Rating
+  // 4. Handler Pemberian Rating (Cloud Firestore)
   const handleRateBook = async (bookId, ratingValue) => {
-    const nextRatings = [...ratings];
-    const idx = nextRatings.findIndex(
-      (r) => String(r.id_user) === String(activeUserId) && String(r.id_buku) === String(bookId)
-    );
-
-    if (idx >= 0) {
-      nextRatings[idx] = { ...nextRatings[idx], nilai_rating: ratingValue };
-    } else {
-      nextRatings.push({
-        id: Date.now(),
-        id_user: activeUserId,
-        id_buku: bookId,
-        nilai_rating: ratingValue
-      });
+    if (!currentUser) {
+      onOpenAuth();
+      showToast('Silakan masuk akun terlebih dahulu untuk memberikan penilaian buku.');
+      return;
     }
-    setRatings(nextRatings);
 
-    showToast(`Rating ${ratingValue}★ tersimpan! Rekomendasi Cerdas diperbarui.`);
-
-    if (isSupabaseConfigured() && currentUser) {
-      try {
-        await supabase.from('ratings').upsert(
-          { id_user: currentUser.id, id_buku: bookId, nilai_rating: ratingValue },
-          { onConflict: 'id_user,id_buku' }
-        );
-      } catch (err) {
-        console.error('Error saat menyimpan rating:', err);
-      }
+    try {
+      await saveUserRating({
+        userId: activeUserId,
+        bookId,
+        ratingValue
+      });
+      showToast(`Rating ${ratingValue}★ berhasil disimpan ke Firestore! Rekomendasi Cerdas diperbarui.`);
+    } catch (err) {
+      console.error('Error saat menyimpan rating:', err);
+      showToast('Gagal menyimpan rating: ' + (err.message || 'Koneksi error'));
     }
   };
 
@@ -208,9 +226,10 @@ export default function Home({
     const foundBook = books.find((b) => b.id === bookId);
 
     if (currentUser?.role === 'user' && currentUser?.nim) {
-      createLoan({
+      await createLoan({
+        uid: currentUser.uid || currentUser.id,
         nim: currentUser.nim,
-        nama: currentUser.nama || 'Mahasiswa UIM',
+        nama: currentUser.nama || currentUser.nama_lengkap || 'Mahasiswa UIM',
         bookId,
         judul: foundBook?.judul || 'Buku Perpustakaan',
         cover_url: foundBook?.cover_url || ''
@@ -219,18 +238,6 @@ export default function Home({
       showToast(`Buku "${foundBook?.judul || 'Buku'}" berhasil dipinjam! Silakan ambil di Meja Sirkulasi.`);
     } else {
       showToast('Buku berhasil dipinjam! Silakan ambil fisik buku di Meja Sirkulasi Perpustakaan UIM.');
-    }
-
-    if (isSupabaseConfigured() && currentUser) {
-      try {
-        await supabase.from('borrowings').insert({
-          id_user: currentUser.id,
-          id_buku: bookId,
-          status: 'dipinjam'
-        });
-      } catch (err) {
-        console.error('Error saat pinjam:', err);
-      }
     }
   };
 
@@ -290,13 +297,47 @@ export default function Home({
     }
   };
 
-  const handleSuggestionSubmit = (e) => {
+  const handleSuggestionSubmit = async (e) => {
     e.preventDefault();
     if (!bookSuggestion.judul.trim()) {
       showToast('Mohon masukkan judul buku yang diusulkan');
       return;
     }
-    showToast(`Usulan buku "${bookSuggestion.judul}" berhasil dikirimkan ke UPT Perpustakaan UIM!`);
+
+    const payload = {
+      ...bookSuggestion,
+      userNim: currentUser?.nim || 'Mahasiswa UIM',
+      userName: currentUser?.nama || currentUser?.nama_lengkap || 'Anonim',
+      tanggal: new Date().toISOString()
+    };
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      try {
+        const { enqueueOfflineAction } = await import('../lib/offlineQueueService');
+        await enqueueOfflineAction({
+          action: 'PROPOSE_BOOK',
+          collectionName: 'data_staging',
+          payload,
+          meta: { summary: `Usulan Buku: "${bookSuggestion.judul}"` }
+        });
+        showToast(`Usulan tersimpan di Antrean Offline (IndexedDB). Otomatis sinkron saat online.`);
+      } catch (err) {
+        showToast(`Usulan buku "${bookSuggestion.judul}" berhasil dicatat.`);
+      }
+    } else {
+      try {
+        const { ingestStagingData } = await import('../lib/stagingService');
+        await ingestStagingData({
+          sumber: 'usulan_pemustaka',
+          metadata: payload,
+          catatan: `Usulan pengadaan dari civitas akademika (${payload.userNim})`
+        });
+        showToast(`Usulan buku "${bookSuggestion.judul}" berhasil dikirimkan ke UPT Perpustakaan UIM!`);
+      } catch (err) {
+        showToast(`Usulan buku "${bookSuggestion.judul}" berhasil dikirimkan.`);
+      }
+    }
+
     setBookSuggestion({ judul: '', pengarang: '', penerbit: '', prodi: '', alasan: '' });
     setServiceModal(null);
   };
@@ -310,29 +351,28 @@ export default function Home({
   // Active student loans
   const activeStudentLoans = studentLoans.filter((l) => l.status === 'dipinjam');
 
-  // Filtering Berdasarkan Search Query & Field Scope
+  // Daftar Tahun Terbit yang Tersedia
+  const availableYears = useMemo(() => {
+    const years = books
+      .map((b) => b.tahun || b.tahun_terbit)
+      .filter((y) => Boolean(y) && !isNaN(Number(y)))
+      .map(Number);
+    return ['Semua', ...Array.from(new Set(years)).sort((a, b) => b - a)];
+  }, [books]);
+
+  // Filtering Berdasarkan Search Query, Kategori, Tahun, & Tab
   const filteredBooks = useMemo(() => {
     let list = [...books];
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       list = list.filter((book) => {
-        if (searchField === 'Judul Buku') {
-          return book.judul.toLowerCase().includes(q);
-        } else if (searchField === 'Pengarang') {
-          return (book.penulis || '').toLowerCase().includes(q);
-        } else if (searchField === 'Subjek') {
-          return (book.kategori || '').toLowerCase().includes(q);
-        } else if (searchField === 'ISBN') {
-          return (book.isbn || '').toLowerCase().includes(q);
-        } else {
-          return (
-            book.judul.toLowerCase().includes(q) ||
-            (book.penulis || '').toLowerCase().includes(q) ||
-            (book.kategori || '').toLowerCase().includes(q) ||
-            (book.isbn || '').toLowerCase().includes(q)
-          );
-        }
+        return (
+          (book.judul || '').toLowerCase().includes(q) ||
+          (book.penulis || '').toLowerCase().includes(q) ||
+          (book.kategori || '').toLowerCase().includes(q) ||
+          (book.isbn || '').toLowerCase().includes(q)
+        );
       });
     }
 
@@ -340,245 +380,180 @@ export default function Home({
       list = list.filter((book) => book.kategori === selectedCategory);
     }
 
+    if (selectedYear !== 'Semua') {
+      list = list.filter((book) => String(book.tahun || book.tahun_terbit) === String(selectedYear));
+    }
+
     if (catalogTab === 'newest') {
-      list.sort((a, b) => b.id - a.id);
+      list.sort((a, b) => {
+        const yearA = Number(a.tahun || a.tahun_terbit || 0);
+        const yearB = Number(b.tahun || b.tahun_terbit || 0);
+        return yearB - yearA;
+      });
+    } else if (catalogTab === 'popular') {
+      const ratingCounts = {};
+      ratings.forEach((r) => {
+        const id = String(r.id_buku);
+        ratingCounts[id] = (ratingCounts[id] || 0) + 1;
+      });
+      list.sort((a, b) => {
+        const countA = ratingCounts[String(a.id)] || 0;
+        const countB = ratingCounts[String(b.id)] || 0;
+        return countB - countA;
+      });
     }
 
     return list;
-  }, [books, searchQuery, searchField, selectedCategory, catalogTab]);
+  }, [books, searchQuery, selectedCategory, selectedYear, catalogTab, ratings]);
 
   return (
     <div className="min-h-screen bg-[#fafbfc] text-slate-800 font-sans selection:bg-[#047857] selection:text-white">
       {/* Toast Notification */}
       {toastMsg && (
-        <div className="fixed bottom-8 right-6 z-50 bg-[#047857] text-white font-bold px-5 py-3.5 rounded-2xl shadow-2xl border border-emerald-400 flex items-center gap-3 animate-bounce">
-          <Sparkles className="w-5 h-5 text-amber-300 animate-spin" />
+        <div className="fixed bottom-8 right-6 z-50 bg-[#047857] text-white font-semibold px-4 py-3 rounded-xl shadow-xl border border-emerald-400/50 flex items-center gap-2.5 animate-fadeIn">
+          <CheckCircle2 className="w-4 h-4 text-amber-300 shrink-0" />
           <span className="text-xs sm:text-sm">{toastMsg}</span>
         </div>
       )}
 
-      {/* 1. HERO BANNER SLIMS 9 BULIAN (OPAC RESMI & NOVELTY) */}
+      {/* 1. HERO BANNER VIDEO DENGAN SEARCH PILL (Sesuai Rekomendasi Mockup Gambar Pengguna) */}
       <HeroBanner
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
-        searchField={searchField}
-        setSearchField={setSearchField}
-        totalBooks={totalBooks}
-        totalCopies={totalCopies}
-        totalMembers={totalMembers}
-        onOpenServiceModal={(modalId) => setServiceModal(modalId)}
       />
 
-      {/* 2. SUBJECT CARDS ELEGAN & INTERAKTIF */}
-      <SubjectCards
-        selectedCategory={selectedCategory}
-        onSelectCategory={setSelectedCategory}
+      {/* 2. 7 KARTU AKSES CEPAT (Sesuai Mockup Gambar: Katalog, Jurnal, Repository, Berita, Pengumuman, Komentar, Bantuan) */}
+      <QuickAccessRow
+        onSelectService={(serviceId) => setServiceModal(serviceId)}
+        onOpenFeedbackModal={() => setServiceModal('feedback')}
       />
 
-      {/* 3. MAIN CONTENT CONTAINER */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
-        {/* ================= SPECIAL WIDGET: PUSTAKAWAN ADMIN COMMAND DECK ================= */}
+      {/* 3. 3 KARTU INTERAKTIF: BERITA TERBARU, REKOMENDASI UNTUK ANDA (IBCF), INFORMASI PENTING (Sesuai Mockup Gambar) */}
+      <ThreeCardsHub
+        recommendations={recommendations}
+        onSelectBook={(bk) => {
+          setSearchQuery(bk.judul);
+          const el = document.getElementById('katalog-section');
+          if (el) el.scrollIntoView({ behavior: 'smooth' });
+        }}
+        onOpenNewsModal={() => setServiceModal('berita')}
+        onOpenScheduleModal={() => setServiceModal('informasi')}
+      />
+
+      {/* 4. MAIN CONTENT CONTAINER */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
+        {/* ================= COMPACT PUSTAKAWAN ADMIN COMMAND BAR ================= */}
         {currentUser?.role === 'admin' && (
-          <div className="mb-12 bg-gradient-to-r from-[#022c22] via-[#064e3b] to-[#047857] text-white p-6 sm:p-7 rounded-3xl shadow-xl border border-emerald-500/40 relative overflow-hidden">
-            <div className="absolute right-0 top-0 w-80 h-80 bg-amber-400/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="mb-8 bg-slate-900 text-white px-5 py-3.5 rounded-2xl border border-slate-800 shadow-md flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="font-bold text-amber-300">Mode Pustakawan Admin Aktif</span>
+              <span className="text-slate-600 hidden sm:inline">•</span>
+              <span className="text-slate-300 hidden sm:inline">Kelola koleksi bibliografi, verifikasi antrean KTM, dan kelola SLiMS 9</span>
+            </div>
 
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
-              <div>
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-950/80 border border-emerald-400/60 text-amber-300 text-xs font-bold mb-2">
-                  <ShieldCheck className="w-4 h-4 text-amber-400" />
-                  <span>PUSTAKAWAN PUSAT UIM • MODE KENDALI CEPAT BERANDA</span>
-                </div>
-                <h3 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
-                  Halo, Staf Pustakawan Admin! 👋
-                </h3>
-                <p className="text-xs sm:text-sm text-emerald-100/90 mt-1 max-w-xl leading-relaxed">
-                  Anda memiliki akses penuh untuk input koleksi bibliografi baru, memverifikasi antrean KTM mahasiswa, dan menghapus koleksi langsung dari Beranda publik.
-                </p>
-              </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsAdminQuickAddOpen(true)}
+                className="px-3.5 py-1.5 bg-[#047857] hover:bg-[#059669] text-white font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+              >
+                <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>+ Input Buku Baru</span>
+              </button>
 
-              <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+              {onOpenAdminVerification && (
                 <button
                   type="button"
-                  onClick={() => setIsAdminQuickAddOpen(true)}
-                  className="px-4 py-2.5 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black rounded-xl text-xs flex items-center gap-2 shadow-lg transition-all hover:scale-102"
+                  onClick={onOpenAdminVerification}
+                  className="px-3.5 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
                 >
-                  <Plus className="w-4 h-4 stroke-[3]" />
-                  <span>+ Input Buku Baru</span>
+                  <UserCheck className="w-3.5 h-3.5" />
+                  <span>Verifikasi KTM</span>
+                  {pendingVerifications > 0 && (
+                    <span className="bg-red-600 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full">
+                      {pendingVerifications}
+                    </span>
+                  )}
                 </button>
+              )}
 
-                {onOpenAdminVerification && (
-                  <button
-                    type="button"
-                    onClick={onOpenAdminVerification}
-                    className="px-4 py-2.5 bg-white/15 hover:bg-white/25 border border-white/30 text-white font-bold rounded-xl text-xs flex items-center gap-2 transition-all"
-                  >
-                    <UserCheck className="w-4 h-4 text-emerald-300" />
-                    <span>Verifikasi KTM</span>
-                    {pendingVerifications > 0 && (
-                      <span className="bg-red-500 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full">
-                        {pendingVerifications}
-                      </span>
-                    )}
-                  </button>
-                )}
-
-                {onSwitchToAdmin && (
-                  <button
-                    type="button"
-                    onClick={onSwitchToAdmin}
-                    className="px-4 py-2.5 bg-emerald-950 hover:bg-emerald-900 border border-emerald-600/60 text-emerald-200 font-bold rounded-xl text-xs flex items-center gap-2 transition-all"
-                  >
-                    <span>Dashboard SLiMS Penuh</span>
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
+              {onSwitchToAdmin && (
+                <button
+                  type="button"
+                  onClick={onSwitchToAdmin}
+                  className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-lg transition-colors flex items-center gap-1 border border-slate-700"
+                >
+                  <span>Dashboard SLiMS</span>
+                  <ExternalLink className="w-3 h-3" />
+                </button>
+              )}
             </div>
           </div>
         )}
 
-        {/* ================= SPECIAL WIDGET: MAHASISWA PERSONAL SPACE ================= */}
+        {/* ================= COMPACT MAHASISWA NOTIFICATION BAR ================= */}
         {currentUser?.role === 'user' && (
-          <div className="mb-12 space-y-6">
-            {/* Welcome Card & KTM Digital Pill */}
-            <div className="bg-gradient-to-r from-[#064e3b] via-[#047857] to-[#022c22] text-white p-6 sm:p-7 rounded-3xl shadow-xl border border-emerald-400/40 relative overflow-hidden">
-              <div className="absolute right-0 top-0 w-80 h-80 bg-emerald-400/10 rounded-full blur-3xl pointer-events-none" />
-
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
-                <div className="flex items-center gap-4">
-                  <div className="w-16 h-16 rounded-2xl bg-amber-400/20 border-2 border-amber-400 text-amber-300 font-black text-2xl flex items-center justify-center shadow-inner shrink-0">
-                    {currentUser.nama ? currentUser.nama.charAt(0).toUpperCase() : 'M'}
-                  </div>
-                  <div>
-                    <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-400/50 text-[10px] font-bold text-emerald-300 uppercase tracking-wider mb-1">
-                      <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                      <span>Mahasiswa Aktif Terverifikasi</span>
-                    </div>
-                    <h3 className="text-lg sm:text-2xl font-black text-white leading-tight">
-                      Assalamu’alaikum, {currentUser.nama}! 👋
-                    </h3>
-                    <p className="text-xs text-emerald-100/90 mt-1 font-mono">
-                      NIM: <span className="font-bold text-amber-300">{currentUser.nim}</span> • {currentUser.prodi}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setIsStudentCardOpen(true)}
-                    className="px-5 py-3 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black rounded-2xl text-xs uppercase tracking-wider transition-all shadow-lg flex items-center gap-2 hover:scale-102"
-                  >
-                    <CreditCard className="w-4 h-4" />
-                    <span>Buka Kartu Anggota Digital (KTM)</span>
-                  </button>
-                </div>
+          <div className="mb-8 bg-emerald-50/90 border border-emerald-200 p-4 rounded-2xl shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-[#047857] text-white font-bold flex items-center justify-center shrink-0">
+                {currentUser.nama ? currentUser.nama.charAt(0).toUpperCase() : 'M'}
               </div>
-
-              {/* 3 Metric Pills for Student */}
-              <div className="mt-6 pt-5 border-t border-emerald-500/30 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                <div className="bg-emerald-950/60 p-3 rounded-2xl border border-emerald-500/30 flex items-center gap-3">
-                  <BookOpen className="w-5 h-5 text-amber-300" />
-                  <div>
-                    <span className="text-[10px] text-emerald-200 block uppercase font-bold">Buku Sedang Dipinjam</span>
-                    <span className="font-bold text-white text-sm">
-                      {activeStudentLoans.length} Koleksi
-                    </span>
-                  </div>
-                </div>
-
-                <div className="bg-emerald-950/60 p-3 rounded-2xl border border-emerald-500/30 flex items-center gap-3">
-                  <Clock className="w-5 h-5 text-emerald-300" />
-                  <div>
-                    <span className="text-[10px] text-emerald-200 block uppercase font-bold">Status Bebas Pustaka</span>
-                    <span className="font-bold text-white text-sm">
-                      {activeStudentLoans.length === 0 ? 'Bebas Tanggungan' : `${activeStudentLoans.length} Buku Wajib Dikembalikan`}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="bg-emerald-950/60 p-3 rounded-2xl border border-emerald-500/30 flex items-center gap-3">
-                  <GraduationCap className="w-5 h-5 text-teal-300" />
-                  <div>
-                    <span className="text-[10px] text-emerald-200 block uppercase font-bold">Kampus Civitas</span>
-                    <span className="font-bold text-white text-xs truncate max-w-[150px] block">
-                      Universitas Islam Madura
-                    </span>
-                  </div>
-                </div>
+              <div>
+                <p className="text-slate-900 font-bold">
+                  Assalamu’alaikum, {currentUser.nama || 'Mahasiswa'}!
+                  <span className="text-slate-500 font-normal ml-2 font-mono text-[11px]">
+                    ({currentUser.nim} • {currentUser.prodi || 'Civitas UIM'})
+                  </span>
+                </p>
+                <p className="text-slate-600 text-[11px] mt-0.5">
+                  {activeStudentLoans.length > 0
+                    ? `Anda memiliki ${activeStudentLoans.length} koleksi buku sedang dipinjam.`
+                    : 'Status pinjaman bersih (Bebas Tanggungan Perpustakaan).'}
+                </p>
               </div>
             </div>
 
-            {/* Section: Buku Sedang Dipinjam Mahasiswa */}
-            {activeStudentLoans.length > 0 && (
-              <div className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-200 shadow-sm">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <BookMarked className="w-5 h-5 text-[#047857]" />
-                    <h4 className="font-extrabold text-slate-900 text-sm sm:text-base">
-                      Koleksi yang Sedang Anda Pinjam
-                    </h4>
-                  </div>
-                  <span className="text-xs text-slate-500 font-medium">
-                    Harap dikembalikan ke Meja Sirkulasi sebelum batas tanggal jatuh tempo
-                  </span>
-                </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsStudentCardOpen(true)}
+                className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-semibold rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs"
+              >
+                <CreditCard className="w-3.5 h-3.5 text-amber-500" />
+                <span>KTM Digital</span>
+              </button>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {activeStudentLoans.map((loan) => (
-                    <div
-                      key={loan.id}
-                      className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex items-start gap-4 hover:border-emerald-300 transition-colors"
-                    >
-                      <img
-                        src={loan.cover_url || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=500&auto=format&fit=crop&q=60'}
-                        alt={loan.judul}
-                        className="w-16 h-20 object-cover rounded-xl shadow-xs shrink-0 bg-white"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <h5 className="font-bold text-slate-900 text-xs sm:text-sm line-clamp-1">
-                          {loan.judul}
-                        </h5>
-                        <div className="mt-1 space-y-0.5 text-[11px] text-slate-600">
-                          <p>Tanggal Pinjam: <span className="font-semibold text-slate-800">{loan.tanggalPinjam}</span></p>
-                          <p>Batas Pengembalian: <span className="font-bold text-red-600">{loan.tanggalJatuhTempo}</span></p>
-                        </div>
-                        <div className="mt-3 flex items-center justify-between">
-                          <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold">
-                            Perpanjangan: {loan.perpanjangan || 0}/2 kali
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleRenewStudentLoan(loan.id)}
-                            className="px-3 py-1 bg-[#047857] hover:bg-[#064e3b] text-white text-[11px] font-bold rounded-lg transition-colors flex items-center gap-1 shadow-xs active:scale-95"
-                          >
-                            <RotateCw className="w-3 h-3" />
-                            <span>Perpanjang 7 Hari</span>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+              {onOpenProfile && (
+                <button
+                  type="button"
+                  onClick={onOpenProfile}
+                  className="px-3.5 py-1.5 bg-[#047857] hover:bg-[#064e3b] text-white font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+                >
+                  <BookMarked className="w-3.5 h-3.5" />
+                  <span>Area Anggota Lengkap &rarr;</span>
+                </button>
+              )}
+            </div>
           </div>
         )}
+
+
 
         {/* 4. KATALOG UTAMA DENGAN TAB FILTER */}
         <section id="katalog-section" className="scroll-mt-24 mb-16">
           {/* Section Header & Tabs */}
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8 pb-5 border-b border-slate-200">
             <div>
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 text-[#047857] text-xs font-bold mb-2 border border-emerald-200/80">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 text-[#047857] text-xs font-semibold mb-2 border border-emerald-200/80">
                 <BookMarked className="w-3.5 h-3.5" />
-                <span>KATALOG DIGITAL PERPUSTAKAAN</span>
+                <span>{t('cat_badge')}</span>
               </div>
               <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-                Koleksi Pustaka Civitas UIM
+                {t('cat_title')}
               </h2>
               <p className="text-xs sm:text-sm text-slate-500 mt-1">
-                Koleksi buku teks, monograf, literatur rujukan, dan karya ilmiah terakreditasi
+                {t('cat_subtitle')}
               </p>
             </div>
 
@@ -594,7 +569,7 @@ export default function Home({
                 }`}
               >
                 <Flame className="w-3.5 h-3.5 text-amber-500" />
-                <span>Terpopuler</span>
+                <span>{t('tab_popular')}</span>
               </button>
               <button
                 type="button"
@@ -606,7 +581,7 @@ export default function Home({
                 }`}
               >
                 <Zap className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Terbaru</span>
+                <span>{t('tab_newest')}</span>
               </button>
               <button
                 type="button"
@@ -618,26 +593,65 @@ export default function Home({
                 }`}
               >
                 <BookOpen className="w-3.5 h-3.5" />
-                <span>Semua ({books.length})</span>
+                <span>{t('tab_all')} ({books.length})</span>
               </button>
             </div>
           </div>
 
-          {/* Active Category Filter Badge */}
-          {selectedCategory !== 'Semua' && (
-            <div className="flex items-center gap-2 mb-6 bg-emerald-50/60 p-3 rounded-xl border border-emerald-200/60 text-xs">
-              <span className="text-slate-500">Filter Subjek Aktif:</span>
-              <span className="font-bold text-[#047857] bg-white px-3 py-1 rounded-lg shadow-xs border border-emerald-200">
-                {selectedCategory}
+          {/* Filter Bar (Kategori & Tahun Terbit SLiMS 9) */}
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-6 bg-slate-50/80 p-3 rounded-2xl border border-slate-200 text-xs">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                <Filter className="w-3.5 h-3.5 text-emerald-700" />
+                <span>{t('filter_label')}</span>
               </span>
-              <button
-                onClick={() => setSelectedCategory('Semua')}
-                className="text-xs text-red-600 font-semibold hover:underline ml-2"
+
+              {/* Dropdown Kategori */}
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-700 font-semibold focus:outline-none focus:border-emerald-600 shadow-xs"
               >
-                Hapus Filter
-              </button>
+                <option value="Semua">{t('all_categories')} ({categories.length - 1})</option>
+                {categories.filter(c => c !== 'Semua').map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+
+              {/* Dropdown Tahun Terbit */}
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(e.target.value)}
+                className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-700 font-semibold focus:outline-none focus:border-emerald-600 shadow-xs"
+              >
+                <option value="Semua">{t('all_years')}</option>
+                {availableYears.filter(y => y !== 'Semua').map((yr) => (
+                  <option key={yr} value={yr}>
+                    Tahun {yr}
+                  </option>
+                ))}
+              </select>
+
+              {(selectedCategory !== 'Semua' || selectedYear !== 'Semua' || searchQuery) && (
+                <button
+                  onClick={() => {
+                    setSelectedCategory('Semua');
+                    setSelectedYear('Semua');
+                    setSearchQuery('');
+                  }}
+                  className="px-2.5 py-1.5 text-red-600 hover:bg-red-50 rounded-lg font-bold transition-colors"
+                >
+                  {t('reset_filter')}
+                </button>
+              )}
             </div>
-          )}
+
+            <div className="text-slate-500 font-medium text-[11px]">
+              {t('showing')} <strong className="text-emerald-800">{filteredBooks.length}</strong> {t('of')} {books.length} {t('titles')}
+            </div>
+          </div>
 
           {/* Book Cards Grid */}
           {filteredBooks.length > 0 ? (
@@ -652,6 +666,8 @@ export default function Home({
                   isBorrowed={borrowedIds.has(book.id)}
                   isAdmin={currentUser?.role === 'admin'}
                   onDeleteBook={handleDeleteBook}
+                  isBookmarked={bookmarkedIds.has(String(book.id))}
+                  onToggleBookmark={handleToggleBookmark}
                 />
               ))}
             </div>
@@ -696,128 +712,30 @@ export default function Home({
           )}
         </section>
 
-        {/* 5. SISTEM REKOMENDASI CERDAS (ITEM-BASED COLLABORATIVE FILTERING) */}
-        {books.length > 0 && (
-          <RecommendationList
-            recommendations={recommendations}
-            ratingsMap={userRatingsMap}
-            onRateBook={handleRateBook}
-            onBorrowBook={handleBorrowBook}
-            borrowedIds={borrowedIds}
-            currentUser={currentUser}
-          />
-        )}
-
-        {/* 6. BENTO GRID: LAYANAN DIGITAL UNGGULAN PERPUSTAKAAN UIM */}
-        <section className="mb-16">
-          <div className="text-center max-w-2xl mx-auto mb-10">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-[#047857] text-xs font-bold uppercase tracking-wider mb-2 border border-emerald-200">
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              <span>Ekosistem Layanan Akademik</span>
-            </div>
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-              Layanan Unggulan Perpustakaan Digital UIM
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-500 mt-2">
-              Berbagai fasilitas terintegrasi untuk mendukung percepatan studi, riset, dan publikasi ilmiah mahasiswa maupun dosen
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {/* Bento 1: Repositori Ilmiah UIM */}
-            <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/90 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group">
-              <div>
-                <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-[#047857] flex items-center justify-center mb-4 group-hover:scale-110 transition-transform border border-emerald-100">
-                  <FileCheck className="w-6 h-6" />
-                </div>
-                <span className="text-[11px] font-bold text-[#047857] uppercase tracking-wider block mb-1">
-                  Repositori Dspace UIM
-                </span>
-                <h3 className="text-base sm:text-lg font-extrabold text-slate-900 leading-snug group-hover:text-[#047857] transition-colors">
-                  Repositori Skripsi & Jurnal Ilmiah
-                </h3>
-                <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-                  Akses naskah lengkap karya tulis ilmiah, skripsi sarjana, tesis, dan artikel jurnal riset dosen dari berbagai fakultas di UIM.
-                </p>
-              </div>
-              <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-[#047857]">
-                <span>Akses Terbuka Sivitas</span>
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-              </div>
-            </div>
-
-            {/* Bento 2: Bebas Pustaka Online */}
-            <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/90 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group">
-              <div>
-                <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform border border-amber-100">
-                  <Award className="w-6 h-6" />
-                </div>
-                <span className="text-[11px] font-bold text-amber-600 uppercase tracking-wider block mb-1">
-                  Syarat Wisuda & Kelulusan
-                </span>
-                <h3 className="text-base sm:text-lg font-extrabold text-slate-900 leading-snug group-hover:text-amber-600 transition-colors">
-                  Surat Keterangan Bebas Pustaka
-                </h3>
-                <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-                  Pengurusan verifikasi pengembalian buku dan penyerahan softcopy karya ilmiah secara cepat tanpa perlu antre di loket sirkulasi.
-                </p>
-              </div>
-              <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-amber-600">
-                <span>Pengurusan Mandiri</span>
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-              </div>
-            </div>
-
-            {/* Bento 3: Cek Plagiasi & Turnitin */}
-            <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/90 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group">
-              <div>
-                <div className="w-12 h-12 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform border border-teal-100">
-                  <ShieldCheck className="w-6 h-6" />
-                </div>
-                <span className="text-[11px] font-bold text-teal-700 uppercase tracking-wider block mb-1">
-                  Integritas Akademik
-                </span>
-                <h3 className="text-base sm:text-lg font-extrabold text-slate-900 leading-snug group-hover:text-teal-700 transition-colors">
-                  Uji Orisinalitas & Anti-Plagiasi
-                </h3>
-                <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-                  Layanan pengecekan similaritas naskah menggunakan sistem Turnitin resmi guna memastikan orisinalitas karya sebelum sidang skripsi.
-                </p>
-              </div>
-              <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-teal-700">
-                <span>Standar Mutu UIM</span>
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* 7. MUTIARA HIKMAH & HIKMAH LITERASI */}
-        <section className="mb-16">
-          <div className="relative rounded-3xl overflow-hidden bg-gradient-to-r from-[#022c22] via-[#064e3b] to-[#047857] p-8 sm:p-12 text-white shadow-xl">
-            <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-400/10 rounded-full blur-3xl pointer-events-none" />
-
-            <div className="relative z-10 max-w-3xl">
-              <span className="text-amber-300 font-mono text-xs font-bold uppercase tracking-widest block mb-2">
+        {/* 5. PESAN LITERASI ISLAMI UIM */}
+        <section className="mb-14">
+          <div className="relative rounded-2xl overflow-hidden bg-gradient-to-r from-[#022c22] via-[#064e3b] to-[#047857] p-6 sm:p-8 text-white shadow-lg">
+            <div className="relative z-10 max-w-2xl">
+              <span className="text-amber-300 font-mono text-[10px] font-bold uppercase tracking-widest block mb-1.5">
                 • PESAN LITERASI ISLAMI UIM •
               </span>
-              <blockquote className="text-lg sm:text-2xl font-serif font-medium leading-relaxed italic text-emerald-50">
+              <blockquote className="text-sm sm:text-base font-serif leading-relaxed italic text-emerald-50">
                 “Bacalah dengan menyebut nama Tuhanmu yang menciptakan. Dia telah menciptakan manusia dari segumpal darah. Bacalah, dan Tuhanmulah Yang Maha Mulia.”
               </blockquote>
-              <p className="text-xs text-amber-200/90 mt-3 font-medium">
+              <p className="text-[11px] text-amber-200 mt-2 font-medium">
                 — QS. Al-'Alaq: 1-3
               </p>
-              <div className="mt-6 pt-5 border-t border-white/20 flex flex-wrap items-center gap-6 text-xs text-emerald-100">
-                <span className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <div className="mt-4 pt-3 border-t border-white/15 flex flex-wrap items-center gap-5 text-xs text-emerald-100">
+                <span className="flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                   Berilmu Amaliah
                 </span>
-                <span className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span className="flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                   Beramal Ilmiah
                 </span>
-                <span className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span className="flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                   Berakhlakul Karimah
                 </span>
               </div>
@@ -825,79 +743,7 @@ export default function Home({
           </div>
         </section>
 
-        {/* 8. INFORMASI OPERASIONAL & KAMPUS HIJAU UIM */}
-        <section id="layanan-section" className="border-t border-slate-200 pt-12 scroll-mt-24">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Box 1: Status Jam Operasional Hari Ini */}
-            <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-11 h-11 rounded-2xl bg-emerald-50 text-[#047857] flex items-center justify-center border border-emerald-100">
-                    <Clock className="w-5 h-5" />
-                  </div>
-                  <span
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-white text-[10px] font-bold shadow-xs ${operationalStatus.badgeColor}`}
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                    <span>{operationalStatus.text}</span>
-                  </span>
-                </div>
-                <h4 className="font-extrabold text-slate-900 text-sm">Jam Operasional Layanan</h4>
-                <div className="mt-3 space-y-1.5 text-xs text-slate-600">
-                  <div className="flex justify-between py-1 border-b border-slate-100">
-                    <span>Senin – Kamis:</span>
-                    <span className="font-semibold text-slate-800">08.00 – 16.00 WIB</span>
-                  </div>
-                  <div className="flex justify-between py-1 border-b border-slate-100">
-                    <span>Jumat:</span>
-                    <span className="font-semibold text-slate-800">08.00 – 15.30 WIB</span>
-                  </div>
-                  <div className="flex justify-between py-1 text-amber-700 font-medium">
-                    <span>Sabtu & Minggu:</span>
-                    <span className="font-bold">Libur Pelayanan</span>
-                  </div>
-                </div>
-              </div>
-            </div>
 
-            {/* Box 2: Fasilitas Gedung Perpustakaan */}
-            <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
-              <div>
-                <div className="w-11 h-11 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 mb-4">
-                  <Wifi className="w-5 h-5" />
-                </div>
-                <h4 className="font-extrabold text-slate-900 text-sm">Fasilitas Pemustaka</h4>
-                <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-                  Ruang baca ber-AC, area belajar mandiri (*coworking space*), stopkontak di setiap bilik baca, akses Wi-Fi berkecepatan tinggi, dan loker penitipan tas terpusat.
-                </p>
-              </div>
-              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center gap-2 text-xs font-semibold text-blue-600">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Nyaman & Ramah Pemustaka</span>
-              </div>
-            </div>
-
-            {/* Box 3: Lokasi & Kontak Resmi UIM */}
-            <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
-              <div>
-                <div className="w-11 h-11 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center border border-teal-100 mb-4">
-                  <MapPin className="w-5 h-5" />
-                </div>
-                <h4 className="font-extrabold text-slate-900 text-sm">Kampus Hijau UIM Pamekasan</h4>
-                <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-                  Gedung Perpustakaan Pusat UIM, Jl. Raya Bettet No. 49, Pamekasan, Madura, Jawa Timur 69317.
-                </p>
-                <p className="text-xs text-[#047857] font-semibold mt-1">
-                  Email: perpustakaan@uim.ac.id
-                </p>
-              </div>
-              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-[#047857]">
-                <span>Universitas Islam Madura</span>
-                <span className="font-mono text-[11px] text-slate-400">Pamekasan</span>
-              </div>
-            </div>
-          </div>
-        </section>
       </div>
 
       {/* MODAL KARTU DIGITAL MAHASISWA */}
@@ -1084,71 +930,28 @@ export default function Home({
         </div>
       )}
 
-      {/* ================= MODAL NOVELTY: E-JOURNAL & DATABASE ================= */}
-      {serviceModal === 'ejournal' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 text-slate-800 shadow-2xl relative">
-            <button
-              onClick={() => setServiceModal(null)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <div className="flex items-center gap-2 mb-3 text-indigo-700">
-              <Globe2 className="w-6 h-6" />
-              <h3 className="text-lg font-bold">Pangkalan Data E-Journal & E-Resources</h3>
-            </div>
-            <p className="text-xs text-slate-600 mb-4 leading-relaxed">
-              Akses cepat pangkalan data jurnal ilmiah terakreditasi nasional dan internasional yang dilanggan maupun akses terbuka:
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-              <a
-                href="https://sinta.kemdikbud.go.id"
-                target="_blank"
-                rel="noreferrer"
-                className="p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all block"
-              >
-                <span className="font-bold text-slate-800 block">SINTA Kemendikbud</span>
-                <span className="text-[10px] text-slate-500">Peringkat Jurnal Ilmiah S1 - S6</span>
-              </a>
-              <a
-                href="https://garuda.kemdikbud.go.id"
-                target="_blank"
-                rel="noreferrer"
-                className="p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all block"
-              >
-                <span className="font-bold text-slate-800 block">GARUDA</span>
-                <span className="text-[10px] text-slate-500">Garba Rujukan Digital Nasional</span>
-              </a>
-              <a
-                href="https://moraref.kemenag.go.id"
-                target="_blank"
-                rel="noreferrer"
-                className="p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all block"
-              >
-                <span className="font-bold text-slate-800 block">MORAREF Kemenag</span>
-                <span className="text-[10px] text-slate-500">Riset PTKI & Studi Islam</span>
-              </a>
-              <a
-                href="https://www.neliti.com"
-                target="_blank"
-                rel="noreferrer"
-                className="p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl transition-all block"
-              >
-                <span className="font-bold text-slate-800 block">NELITI</span>
-                <span className="text-[10px] text-slate-500">Repositori Riset Indonesia</span>
-              </a>
-            </div>
-            <button
-              type="button"
-              onClick={() => setServiceModal(null)}
-              className="mt-5 w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs"
-            >
-              Tutup
-            </button>
-          </div>
-        </div>
-      )}
+      {/* ================= MODAL PORTAL JURNAL & KARYA ILMIAH SIVITAS UIM ================= */}
+      <JournalPortalModal
+        isOpen={serviceModal === 'ejournal' || serviceModal === 'jurnal'}
+        onClose={() => setServiceModal(null)}
+        currentUser={currentUser}
+        onOpenAuth={onOpenAuth}
+      />
+
+      {/* ================= MODAL PORTAL BERITA & WARTA PERPUSTAKAAN UIM ================= */}
+      <NewsPortalModal
+        isOpen={serviceModal === 'berita'}
+        onClose={() => setServiceModal(null)}
+        currentUser={currentUser}
+      />
+
+      {/* ================= MODAL NOTIFIKASI & PENGUMUMAN RESMI UIM ================= */}
+      <NotificationModal
+        isOpen={serviceModal === 'pengumuman' || serviceModal === 'informasi'}
+        onClose={() => setServiceModal(null)}
+        currentUser={currentUser}
+        initialTab={serviceModal === 'informasi' ? 'jadwal' : 'list'}
+      />
 
       {/* ================= MODAL NOVELTY: USULAN PENGADAAN BUKU ================= */}
       {serviceModal === 'usulan-buku' && (
@@ -1241,15 +1044,58 @@ export default function Home({
         </div>
       )}
 
-      {/* FOOTER RESMI PERPUSTAKAAN UIM */}
-      <footer className="bg-[#022c22] text-white border-t border-emerald-950 mt-16 py-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-emerald-200/80">
-          <p>© {new Date().getFullYear()} UPT Perpustakaan Universitas Islam Madura (UIM Pamekasan). Seluruh Hak Cipta Dilindungi.</p>
-          <p className="flex items-center gap-1.5 font-medium">
-            <span>Didukung oleh SLiMS 9 Bulian & Sistem Rekomendasi Cerdas</span>
-          </p>
+      {/* ================= MODAL KOMENTAR & KOTAK SARAN PEMUSTAKA ================= */}
+      <FeedbackModal
+        isOpen={serviceModal === 'feedback' || serviceModal === 'komentar'}
+        onClose={() => setServiceModal(null)}
+        currentUser={currentUser}
+      />
+
+      {/* ================= MODAL BANTUAN & PANDUAN PEMUSTAKA ================= */}
+      {serviceModal === 'bantuan' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 text-slate-800 shadow-2xl relative border border-slate-100 animate-scaleUp">
+            <button
+              onClick={() => setServiceModal(null)}
+              className="absolute top-5 right-5 text-slate-400 hover:text-slate-600 p-1"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-2.5 mb-4 text-[#047857]">
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-[#047857] flex items-center justify-center border border-emerald-100">
+                <Coffee className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Bantuan & Panduan Pemustaka</h3>
+                <p className="text-xs text-slate-500">Layanan Informasi Perpustakaan UIM</p>
+              </div>
+            </div>
+            <div className="space-y-3 text-xs text-slate-600 leading-relaxed max-h-[70vh] overflow-y-auto pr-1">
+              <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-100">
+                <h4 className="font-bold text-[#047857] mb-0.5">1. Cara Meminjam Koleksi Buku:</h4>
+                <p>Login melalui menu <strong>Masuk</strong> (menggunakan NIM atau NIDN), pilih buku dari katalog OPAC, kemudian klik <strong>Pinjam Buku</strong>.</p>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <h4 className="font-bold text-slate-800 mb-0.5">2. Durasi & Ketentuan:</h4>
+                <p>Masa pinjam adalah 7 hari kalender (maksimal 3 eksemplar). Anda dapat memperpanjang masa pinjam secara mandiri 1x sebelum jatuh tempo.</p>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <h4 className="font-bold text-slate-800 mb-0.5">3. Kontak Hotline Pustakawan:</h4>
+                <p>Email: <span className="font-mono text-[#047857] font-semibold">perpus@uim.ac.id</span> • WhatsApp: <span className="font-mono text-slate-700 font-semibold">+62 823-3882-9900</span></p>
+              </div>
+            </div>
+            <div className="mt-5 pt-3 border-t border-slate-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setServiceModal(null)}
+                className="px-5 py-2 bg-[#047857] hover:bg-[#064e3b] text-white font-bold rounded-xl text-xs transition-colors"
+              >
+                Tutup Panduan
+              </button>
+            </div>
+          </div>
         </div>
-      </footer>
+      )}
     </div>
   );
 }

@@ -1,50 +1,83 @@
 /**
- * Layanan Pengelolaan Anggota & Autentikasi Perpustakaan UIM
- * Terintegrasi ganda: Firebase Cloud Firestore + LocalStorage Offline Sync
+ * ==============================================================================
+ * LAYANAN KEANGGOTAAN MAHASISWA (KTM) & VERIFIKASI PUSTAKAWAN
+ * ==============================================================================
+ * Sesuai Ketetapan Keamanan:
+ * - Sumber data utama: Cloud Firestore koleksi 'users' (profil pengguna).
+ * - TIDAK menyimpan password dalam LocalStorage maupun Firestore.
+ * - Menghapus akun admin hardcoded (menggunakan Firebase Authentication).
+ * - Mengelola status verifikasi KTM mahasiswa ('pending' | 'verified' | 'rejected').
  */
+
 import { db, isFirebaseConfigured } from './firebase';
 import {
   collection,
   doc,
-  setDoc,
-  deleteDoc,
   getDocs,
-  updateDoc
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  onSnapshot
 } from 'firebase/firestore';
 
-const STORAGE_KEY = 'uim_digilib_members_clean_v4';
-const RESET_FLAG = 'uim_digilib_members_reset_v4';
+const STORAGE_KEY = 'uim_digilib_members_cache_v5';
 
-// Bersihkan data lama dari browser pengguna
-try {
-  if (!localStorage.getItem(RESET_FLAG)) {
-    localStorage.removeItem('uim_digilib_members');
-    localStorage.removeItem('uim_digilib_members_data');
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
-    localStorage.setItem(RESET_FLAG, 'true');
+// Data Anggota Demonstrasi Awal (tanpa password)
+export const INITIAL_MEMBERS = [
+  {
+    id: 'mhs-demo-1',
+    uid: 'mhs-demo-1',
+    nim: '202201001',
+    nama: 'Achmad Fauzi',
+    prodi: 'Teknik Informatika (Fakultas Teknik)',
+    email: 'achmad.fauzi@student.uim.ac.id',
+    role: 'user',
+    status: 'verified',
+    status_verifikasi: 'verified',
+    registeredAt: '2026-11-01',
+    verifiedAt: '2026-11-02'
+  },
+  {
+    id: 'mhs-demo-2',
+    uid: 'mhs-demo-2',
+    nim: '202201002',
+    nama: 'Siti Nurhaliza',
+    prodi: 'Sistem Informasi (Fakultas Teknik)',
+    email: 'siti.nur@student.uim.ac.id',
+    role: 'user',
+    status: 'verified',
+    status_verifikasi: 'verified',
+    registeredAt: '2026-11-03',
+    verifiedAt: '2026-11-03'
+  },
+  {
+    id: 'mhs-demo-3',
+    uid: 'mhs-demo-3',
+    nim: '202301045',
+    nama: 'Bambang Irawan',
+    prodi: 'Pendidikan Agama Islam (FTI)',
+    email: 'bambang.i@student.uim.ac.id',
+    role: 'user',
+    status: 'pending',
+    status_verifikasi: 'pending',
+    registeredAt: '2026-11-09',
+    verifiedAt: null
   }
-} catch (e) {}
-
-const INITIAL_MEMBERS = [];
-
-export const ADMIN_CREDENTIALS = {
-  username: 'admin',
-  password: 'admin',
-  nama: 'Staf Pustakawan Pusat UIM',
-  email: 'pustakawan@uim.ac.id',
-  role: 'admin'
-};
+];
 
 export function getStoredMembers() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_MEMBERS));
-      return INITIAL_MEMBERS;
+    if (raw === null) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
+      return [];
     }
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
   } catch (e) {
-    return INITIAL_MEMBERS;
+    return [];
   }
 }
 
@@ -52,94 +85,71 @@ export function saveStoredMembers(members) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(members));
   } catch (e) {
-    console.error('Gagal menyimpan data anggota ke storage', e);
+    console.error('Gagal menyimpan cache anggota', e);
   }
 }
 
 /**
- * Sinkronisasi data anggota langsung dari Firebase Cloud Firestore
+ * Sinkronisasi data anggota langsung dari Firebase Cloud Firestore (koleksi 'users')
  */
 export async function syncMembersFromFirebase() {
   if (!isFirebaseConfigured() || !db) return getStoredMembers();
+
   try {
-    const colRef = collection(db, 'members');
+    const colRef = collection(db, 'users');
     const snapshot = await getDocs(colRef);
     const firestoreMembers = [];
     snapshot.forEach((docSnap) => {
-      firestoreMembers.push(docSnap.data());
-    });
-    if (firestoreMembers.length > 0) {
-      saveStoredMembers(firestoreMembers);
-      return firestoreMembers;
-    }
-    return getStoredMembers();
-  } catch (error) {
-    console.warn('Gagal sinkronisasi anggota dari Firebase:', error);
-    return getStoredMembers();
-  }
-}
-
-export function registerStudentMember({ nim, nama, prodi, email, password, noHp }) {
-  const members = getStoredMembers();
-  const trimmedNim = String(nim).trim();
-
-  // Validasi apakah NIM sudah terdaftar
-  const existing = members.find((m) => String(m.nim).trim() === trimmedNim);
-  if (existing) {
-    throw new Error(`Nomor KTM / NIM ${trimmedNim} sudah pernah didaftarkan sebelumnya.`);
-  }
-
-  const newMember = {
-    id: `mhs-${Date.now()}`,
-    nim: trimmedNim,
-    nama: nama.trim(),
-    prodi: prodi.trim(),
-    email: email.trim(),
-    noHp: noHp ? noHp.trim() : '',
-    password,
-    role: 'user',
-    status: 'pending', // Menunggu Verifikasi Admin Meja Sirkulasi
-    registeredAt: new Date().toISOString(),
-    verifiedAt: null
-  };
-
-  members.unshift(newMember);
-  saveStoredMembers(members);
-
-  // Simpan ke Firebase Cloud Firestore jika terhubung
-  if (isFirebaseConfigured() && db) {
-    try {
-      setDoc(doc(db, 'members', newMember.id), newMember).catch((err) => {
-        console.warn('Penyimpanan anggota ke Firebase ditunda:', err);
+      const data = docSnap.data();
+      // Standarisasi field status / status_verifikasi
+      firestoreMembers.push({
+        id: docSnap.id,
+        uid: docSnap.id,
+        ...data,
+        status: data.status_verifikasi || data.status || 'pending'
       });
-    } catch (e) {}
+    });
+
+    saveStoredMembers(firestoreMembers);
+    return firestoreMembers;
+  } catch (error) {
+    console.warn('Gagal sinkronisasi anggota dari Firestore:', error);
   }
 
-  return newMember;
+  return getStoredMembers();
 }
 
-export function updateMemberStatus(id, newStatus) {
+/**
+ * Memperbarui status verifikasi KTM mahasiswa ('verified' | 'rejected')
+ */
+export async function updateMemberStatus(id, newStatus) {
   const members = getStoredMembers();
-  const idx = members.findIndex((m) => m.id === id);
+  const cleanId = String(id);
+  const idx = members.findIndex((m) => String(m.id) === cleanId || String(m.uid) === cleanId);
+
   if (idx >= 0) {
+    const now = new Date().toISOString();
     const updated = {
       ...members[idx],
       status: newStatus,
-      verifiedAt: newStatus === 'verified' ? new Date().toISOString() : null
+      status_verifikasi: newStatus,
+      verifiedAt: newStatus === 'verified' ? now : null
     };
+
     members[idx] = updated;
     saveStoredMembers(members);
 
-    // Update di Firebase Cloud Firestore jika terhubung
+    // Update di Cloud Firestore
     if (isFirebaseConfigured() && db) {
       try {
-        updateDoc(doc(db, 'members', id), {
+        await updateDoc(doc(db, 'users', cleanId), {
           status: newStatus,
+          status_verifikasi: newStatus,
           verifiedAt: updated.verifiedAt
-        }).catch((err) => {
-          console.warn('Pembaruan status anggota di Firebase ditunda:', err);
         });
-      } catch (e) {}
+      } catch (err) {
+        console.warn('Pembaruan status anggota di Firestore ditunda:', err);
+      }
     }
 
     return members[idx];
@@ -147,76 +157,111 @@ export function updateMemberStatus(id, newStatus) {
   throw new Error('Data anggota tidak ditemukan');
 }
 
-export function deleteMember(id) {
+/**
+ * Hapus Anggota
+ */
+export async function deleteMember(id) {
   const members = getStoredMembers();
-  const filtered = members.filter((m) => m.id !== id);
+  const cleanId = String(id);
+  const filtered = members.filter((m) => String(m.id) !== cleanId && String(m.uid) !== cleanId);
   saveStoredMembers(filtered);
 
-  // Hapus dari Firebase Cloud Firestore jika terhubung
   if (isFirebaseConfigured() && db) {
     try {
-      deleteDoc(doc(db, 'members', id)).catch((err) => {
-        console.warn('Penghapusan anggota di Firebase ditunda:', err);
-      });
+      await deleteDoc(doc(db, 'users', cleanId));
     } catch (e) {}
   }
 
   return filtered;
 }
 
+/**
+ * Hitung Jumlah Mahasiswa yang Menunggu Verifikasi KTM
+ */
 export function countPendingVerifications() {
   const members = getStoredMembers();
-  return members.filter((m) => m.status === 'pending').length;
+  return members.filter((m) => (m.status_verifikasi || m.status) === 'pending').length;
+}
+
+/**
+ * Listener Real-time Data Keanggotaan
+ */
+export function subscribeMembers(callback) {
+  callback(getStoredMembers());
+
+  if (!isFirebaseConfigured() || !db) return () => {};
+
+  try {
+    const colRef = collection(db, 'users');
+    return onSnapshot(colRef, (snapshot) => {
+      const live = [];
+      snapshot.forEach((docSnap) => {
+        const d = docSnap.data();
+        live.push({
+          id: docSnap.id,
+          uid: docSnap.id,
+          ...d,
+          status: d.status_verifikasi || d.status || 'pending'
+        });
+      });
+      saveStoredMembers(live);
+      callback(live);
+    }, (e) => {
+      console.warn('Listener Firestore members error:', e);
+    });
+  } catch (e) {
+    return () => {};
+  }
+}
+
+/**
+ * Tambah / Daftarkan Anggota Baru dari Panel Admin (Pustakawan)
+ */
+export async function registerStudentMember(memberData) {
+  const members = getStoredMembers();
+  const id = memberData.nim ? `uim_${memberData.nim}` : `user_${Date.now()}`;
+  const now = new Date().toISOString();
+
+  const newMember = {
+    id,
+    uid: id,
+    nama: memberData.nama,
+    nama_lengkap: memberData.nama,
+    email: memberData.email || `${memberData.nim || 'mhs'}@student.uim.ac.id`,
+    nim: memberData.nim || '',
+    prodi: memberData.prodi || 'Umum',
+    role: 'mahasiswa',
+    status: 'verified',
+    status_verifikasi: 'verified',
+    created_at: now
+  };
+
+  members.unshift(newMember);
+  saveStoredMembers(members);
+
+  if (isFirebaseConfigured() && db) {
+    try {
+      await setDoc(doc(db, 'users', id), {
+        uid: id,
+        nama_lengkap: newMember.nama_lengkap,
+        nama: newMember.nama,
+        email: newMember.email,
+        nim: newMember.nim,
+        prodi: newMember.prodi,
+        role: newMember.role,
+        status_verifikasi: newMember.status_verifikasi,
+        status: newMember.status,
+        created_at: now
+      });
+    } catch (err) {
+      console.warn('Gagal menyimpan anggota ke Firestore:', err);
+    }
+  }
+
+  return newMember;
 }
 
 export function clearAllMembers() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
+  saveStoredMembers([]);
   return [];
-}
-
-export function authenticateAdmin(arg1, arg2) {
-  const username = typeof arg1 === 'object' && arg1 !== null ? arg1.username : arg1;
-  const password = typeof arg1 === 'object' && arg1 !== null ? arg1.password : arg2;
-
-  const cleanUser = String(username || '').trim().toLowerCase();
-  const cleanPass = String(password || '').trim();
-
-  if (cleanUser === ADMIN_CREDENTIALS.username.toLowerCase() && cleanPass === ADMIN_CREDENTIALS.password) {
-    return {
-      id: 'admin-1',
-      username: ADMIN_CREDENTIALS.username,
-      nama: ADMIN_CREDENTIALS.nama,
-      email: ADMIN_CREDENTIALS.email,
-      role: 'admin'
-    };
-  }
-  throw new Error('Username atau kata sandi pustakawan salah. Masukkan Username: admin dan Kata Sandi: admin');
-}
-
-export function authenticateStudent(arg1, arg2) {
-  const nim = typeof arg1 === 'object' && arg1 !== null ? arg1.nim : arg1;
-  const password = typeof arg1 === 'object' && arg1 !== null ? arg1.password : arg2;
-
-  const members = getStoredMembers();
-  const trimmedNim = String(nim || '').trim();
-  const trimmedPass = String(password || '').trim();
-
-  const found = members.find((m) => String(m.nim).trim() === trimmedNim);
-
-  if (!found) {
-    throw new Error(`Nomor KTM / NIM "${trimmedNim}" belum terdaftar. Silakan daftar mahasiswa baru terlebih dahulu.`);
-  }
-
-  if (found.password && String(found.password).trim() !== trimmedPass) {
-    throw new Error('Kata sandi yang Anda masukkan salah.');
-  }
-
-  if (found.status === 'pending') {
-    const err = new Error('Akun Anda masih dalam status Menunggu Verifikasi Admin Pustakawan UIM.');
-    err.code = 'PENDING_VERIFICATION';
-    err.user = found;
-    throw err;
-  }
-
-  return found;
 }

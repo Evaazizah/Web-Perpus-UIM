@@ -5,11 +5,34 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#047857" />
-    <meta name="description" content="Perpustakaan Universitas Islam Madura (UIM) - Portal Koleksi Digital, OPAC, Khazanah Keilmuan, PWA Offline, & Sistem Rekomendasi Collaborative Filtering" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <script>
+      // Unregister any stale Service Worker and clear CacheStorage to guarantee latest design reflection
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          for (var i = 0; i < registrations.length; i++) {
+            registrations[i].unregister();
+          }
+        });
+      }
+      if ('caches' in window) {
+        caches.keys().then(function(names) {
+          for (var i = 0; i < names.length; i++) {
+            caches.delete(names[i]);
+          }
+        });
+      }
+    </script>
+    <meta name="description" content="Perpustakaan Universitas Islam Madura (UIM) - Portal Koleksi Digital, OPAC SLiMS 9.8.0 Bulian, Khazanah Keilmuan, PWA Offline, & Sistem Rekomendasi Collaborative Filtering" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Perpustakaan Universitas Islam Madura - Digilib UIM</title>
-    <script type="module" crossorigin src="/assets/index-D3SvVYII.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-CCy6LiGb.css">
+    <script type="module" crossorigin src="/assets/index-Dzxoc4U4.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/vendor-react-Ds7D3P6J.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-firebase-ByEU76yP.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-icons-B7WmCAHL.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-rNhh69OL.css">
   <link rel="manifest" href="/manifest.webmanifest"></head>
   <body class="bg-slate-50 text-slate-800 min-h-screen selection:bg-emerald-500 selection:text-white font-sans">
     <div id="root"></div>

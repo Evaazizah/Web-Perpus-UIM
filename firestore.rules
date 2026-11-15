@@ -1,0 +1,96 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && (
+        getUserData().role == 'admin' || 
+        getUserData().role == 'librarian'
+      );
+    }
+    
+    function isVerifiedMember() {
+      return isAuthenticated() && (
+        getUserData().role == 'admin' ||
+        (getUserData().role == 'member' && getUserData().status_verifikasi == 'verified') ||
+        (getUserData().role == 'user' && getUserData().status_verifikasi == 'verified')
+      );
+    }
+
+    // 1. Koleksi USERS (Profil Pengguna & Keanggotaan)
+    match /users/{userId} {
+      // Siapapun yang terautentikasi dapat membaca profil dasar (misal untuk author rating/anggota)
+      allow read: if isAuthenticated();
+      // Registrasi awal: pengguna hanya dapat membuat dokumen dengan UID miliknya sendiri
+      allow create: if isOwner(userId);
+      // Pembaruan: Pengguna hanya boleh mengubah data non-sensitif miliknya sendiri,
+      // HANYA Admin yang berhak mengubah role atau status_verifikasi
+      allow update: if isAdmin() || (
+        isOwner(userId) && 
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'status_verifikasi'])
+      );
+      allow delete: if isAdmin();
+    }
+
+    // 2. Koleksi BOOKS (Katalog Bibliografi)
+    match /books/{bookId} {
+      // Publik (termasuk Guest) dapat membaca seluruh katalog
+      allow read: if true;
+      // Hanya Admin/Pustakawan yang berhak menambah, mengubah, atau menghapus buku
+      allow create, update, delete: if isAdmin();
+    }
+
+    // 3. Koleksi RATINGS (Interaksi Penilaian Buku - Collaborative Filtering)
+    match /ratings/{ratingId} {
+      // Publik dapat membaca rating untuk menghitung kemiripan dan menampilkan bintang
+      allow read: if true;
+      // Hanya anggota yang terverifikasi yang boleh memberi rating
+      // Satu dokumen rating wajib memiliki id_user sama dengan auth.uid pengguna
+      allow create: if isVerifiedMember() && request.resource.data.id_user == request.auth.uid;
+      allow update: if isVerifiedMember() && resource.data.id_user == request.auth.uid && request.resource.data.id_user == request.auth.uid;
+      allow delete: if isAdmin() || (isAuthenticated() && resource.data.id_user == request.auth.uid);
+    }
+
+    // 4. Koleksi LOANS (Transaksi Peminjaman Sirkulasi)
+    match /loans/{loanId} {
+      // Pengguna hanya bisa melihat riwayat pinjaman miliknya sendiri; Admin bisa melihat semua
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.uid == request.auth.uid);
+      // Pencatatan & pengembalian transaksi hanya dapat dikelola oleh Admin/Pustakawan
+      allow create, update, delete: if isAdmin();
+    }
+
+    // 5. Koleksi VISITOR_LOGS & VISITOR_STATS (Pelacak Kunjungan)
+    match /visitor_logs/{logId} {
+      allow create: if true; // Public logging
+      allow read: if isAdmin();
+      allow update, delete: if false;
+    }
+    
+    match /visitor_stats/{statId} {
+      allow read: if true; // Public stats counter display
+      allow write: if true; // Counter aggregation
+    }
+
+    // 6. Koleksi DATA_STAGING (Area Pementasan Bot OCR & Crawling - Gap 1)
+    match /data_staging/{stagingId} {
+      // Hanya Admin yang bisa membaca dan mengurasi data staging
+      allow read, update, delete: if isAdmin();
+      // Ingestion bot eksternal diizinkan membuat dokumen staging berstatus 'pending'
+      allow create: if true;
+    }
+  }
+}
+

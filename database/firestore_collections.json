@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UIM Digilib Cloud Firestore Schema & Seed Definitions",
+  "projectId": "uim-digilib",
+  "collections": {
+    "users": {
+      "description": "Profil mahasiswa dan pustakawan yang terautentikasi melalui Firebase Authentication",
+      "sampleDocument": {
+        "uid": "mhs-2022503001",
+        "nama_lengkap": "Achmad Syaiful Bahri",
+        "email": "2022503001@student.uim.ac.id",
+        "nim": "2022503001",
+        "prodi": "Teknik Informatika (Fakultas Teknik)",
+        "role": "mahasiswa",
+        "status_verifikasi": "verified",
+        "created_at": "2026-11-10T08:00:00.000Z"
+      }
+    },
+    "books": {
+      "description": "Katalog utama master bibliografi koleksi perpustakaan",
+      "sampleDocument": {
+        "id": "uim-b001",
+        "judul": "Metodologi Penelitian Hukum Islam",
+        "penulis": "Prof. Dr. H. Abdurrahman, M.Ag",
+        "isbn": "978-602-893-112-1",
+        "penerbit": "UIM Press Pamekasan",
+        "tahun_terbit": 2023,
+        "kategori": "Ilmu Agama Islam",
+        "sinopsis": "Panduan komprehensif metodologi penelitian hukum syariah dan studi kasus peradilan agama di Madura.",
+        "cover_url": "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=500&auto=format&fit=crop&q=60",
+        "lokasi_rak": "Rak 101 - FAI",
+        "total_eksemplar": 3,
+        "salin": 3,
+        "isPromoted": true,
+        "updatedAt": "2026-11-10T08:00:00.000Z"
+      }
+    },
+    "ratings": {
+      "description": "Data penilaian pengguna untuk mesin rekomendasi Item-Based Collaborative Filtering",
+      "sampleDocument": {
+        "id_user": "mhs-2022503001",
+        "id_buku": "uim-b001",
+        "nilai_rating": 5,
+        "created_at": "2026-11-10T08:30:00.000Z",
+        "updated_at": "2026-11-10T08:30:00.000Z"
+      }
+    },
+    "loans": {
+      "description": "Transaksi sirkulasi peminjaman buku civitas akademika",
+      "sampleDocument": {
+        "id": "loan-1731300000000",
+        "uid": "mhs-2022503001",
+        "nim": "2022503001",
+        "nama": "Achmad Syaiful Bahri",
+        "bookId": "uim-b001",
+        "judul": "Metodologi Penelitian Hukum Islam",
+        "cover_url": "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=500&auto=format&fit=crop&q=60",
+        "tanggalPinjam": "2026-11-10",
+        "tanggalJatuhTempo": "2026-11-17",
+        "tanggalKembali": null,
+        "perpanjangan": 0,
+        "status": "dipinjam"
+      }
+    },
+    "visitor_logs": {
+      "description": "Log sesi kunjungan ke portal",
+      "sampleDocument": {
+        "session_id": "ses-1731301234567-xyz",
+        "path": "/",
+        "visit_date": "2026-11-11",
+        "created_at": "2026-11-11T09:00:00.000Z"
+      }
+    },
+    "visitor_stats": {
+      "description": "Ringkasan agregasi statistik pengunjung harian dan total",
+      "sampleDocument": {
+        "todayVisitors": 42,
+        "todayHits": 156,
+        "totalVisitors": 1280,
+        "totalHits": 5640,
+        "activeOnline": 7,
+        "lastUpdatedDate": "2026-11-11"
+      }
+    },
+    "data_staging": {
+      "description": "Area kurasi pustakawan untuk payload dari Web Crawling (Fokus 2) dan scanner OCR (Fokus 3)",
+      "sampleDocument": {
+        "id": "stg-1731300999999",
+        "sumber": "ocr",
+        "metadata": {
+          "judul": "Pengantar Sistem Informasi Berbasis AI di Kampus",
+          "penulis": "Dr. Mohammad Ridwan, M.Kom",
+          "isbn": "978-602-998-123-9",
+          "kategori": "Teknologi Informasi",
+          "sinopsis": "Hasil ekstraksi OCR sampul buku fisik perpustakaan UIM."
+        },
+        "catatan_kurasi": "Menunggu verifikasi kataloger",
+        "status_verifikasi": "pending",
+        "created_at": "2026-11-11T09:15:00.000Z"
+      }
+    }
+  }
+}
+

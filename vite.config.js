@@ -3,9 +3,8 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
-// https://vitejs.dev/config/
 export default defineConfig({
-  // Konfigurasi server agar dapat diakses melalui jaringan lokal
+  // Server lokal
   server: {
     host: '0.0.0.0',
     port: 5173,
@@ -15,16 +14,16 @@ export default defineConfig({
   plugins: [
     react(),
 
-    // Konfigurasi PWA (Progressive Web App)
+    // Progressive Web App
     VitePWA({
       registerType: 'autoUpdate',
+
       includeAssets: [
         'favicon.ico',
         'apple-touch-icon.png',
         'robots.txt'
       ],
 
-      // Web App Manifest
       manifest: {
         name: 'Perpustakaan Universitas Islam Madura - Digilib UIM',
         short_name: 'Digilib UIM',
@@ -34,6 +33,7 @@ export default defineConfig({
         background_color: '#064e3b',
         display: 'standalone',
         start_url: '/',
+
         icons: [
           {
             src: '/icons/pwa-192x192.png',
@@ -54,7 +54,7 @@ export default defineConfig({
         ]
       },
 
-      // Konfigurasi Workbox untuk caching
+      // Konfigurasi caching PWA
       workbox: {
         globPatterns: [
           '**/*.{js,css,html,ico,png,svg,webp,woff2}'
@@ -62,11 +62,11 @@ export default defineConfig({
 
         runtimeCaching: [
           {
-            // Cache API Supabase
-            urlPattern: /^https:\/\/.*\.supabase\.co\/rest\/v1\/.*$/,
+            // Cache layanan Google dan Firebase
+            urlPattern: /^https:\/\/.*googleapis\.com\/.*$/,
             handler: 'NetworkFirst',
             options: {
-              cacheName: 'supabase-api-cache',
+              cacheName: 'api-data-cache',
               expiration: {
                 maxEntries: 100,
                 maxAgeSeconds: 60 * 60 * 24
@@ -77,7 +77,6 @@ export default defineConfig({
             }
           },
           {
-            // Cache gambar cover buku
             urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp)$/,
             handler: 'StaleWhileRevalidate',
             options: {
@@ -89,7 +88,6 @@ export default defineConfig({
             }
           },
           {
-            // Cache Google Fonts
             urlPattern: /^https:\/\/fonts\.(?:googleapis|gstatic)\.com\/.*/i,
             handler: 'CacheFirst',
             options: {
@@ -103,5 +101,41 @@ export default defineConfig({
         ]
       }
     })
-  ]
+  ],
+
+  // Optimasi pembagian JavaScript
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          const cleanId = id.replace(/\\/g, '/');
+          if (!cleanId.includes('/node_modules/')) {
+            return;
+          }
+
+          // React Core
+          if (
+            cleanId.includes('/react/') ||
+            cleanId.includes('/react-dom/') ||
+            cleanId.includes('/scheduler/')
+          ) {
+            return 'vendor-react';
+          }
+
+          // Firebase SDK
+          if (cleanId.includes('/firebase/') || cleanId.includes('/@firebase/')) {
+            return 'vendor-firebase';
+          }
+
+          // Icons
+          if (cleanId.includes('/lucide-react/')) {
+            return 'vendor-icons';
+          }
+        }
+      }
+    },
+
+    // Batas peringatan ukuran chunk
+    chunkSizeWarningLimit: 500
+  }
 });

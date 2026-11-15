@@ -1,60 +1,63 @@
 import React, { useState, useEffect } from 'react';
+import { LanguageProvider, useLanguage } from './context/LanguageContext';
+import TopBar from './components/TopBar';
+import BrandHeader from './components/BrandHeader';
 import Navbar from './components/Navbar';
+import FooterUIM from './components/FooterUIM';
 import Home from './pages/Home';
 import AuthModal from './pages/Auth';
 import AdminDashboard from './pages/AdminDashboard';
+import UserProfile from './pages/UserProfile';
 import AdminVerificationModal from './components/AdminVerificationModal';
+import NotificationModal from './components/NotificationModal';
 import UimLogo from './components/UimLogo';
 import VisitorCounterWidget from './components/VisitorCounterWidget';
 import { recordPageView } from './lib/visitorService';
-import { supabase, isSupabaseConfigured } from './lib/supabase';
+import { subscribeAuthState, logoutUser } from './lib/authService';
+import { initOfflineQueueAutoSync } from './lib/offlineQueueService';
 import { ShieldCheck, Sparkles, BookOpen, ExternalLink } from 'lucide-react';
 
-export default function App() {
+function MainApp() {
   const [currentUser, setCurrentUser] = useState(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
   const [isAdminVerificationOpen, setIsAdminVerificationOpen] = useState(false);
-  const [currentView, setCurrentView] = useState('public'); // 'public' | 'admin'
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [currentView, setCurrentView] = useState('public'); // 'public' | 'admin' | 'profile'
   const [activeTab, setActiveTab] = useState('beranda');
   const [searchQuery, setSearchQuery] = useState('');
+  const { currentLang } = useLanguage();
+
+  // Set HTML dir attribute for Arabic RTL support
+  useEffect(() => {
+    document.documentElement.dir = currentLang === 'ar' ? 'rtl' : 'ltr';
+    document.documentElement.lang = currentLang;
+  }, [currentLang]);
+
+  // Inisialisasi Otomatis Antrean Offline-Write PWA (IndexedDB)
+  useEffect(() => {
+    initOfflineQueueAutoSync();
+  }, []);
 
   // Pelacakan Kunjungan Pengunjung (Visitor Counter SPA per navigasi tab/halaman)
   useEffect(() => {
     recordPageView(activeTab);
   }, [activeTab, currentView]);
 
-  // Listener autentikasi Supabase jika aktif
+  // Listener autentikasi Firebase Authentication & Profil Firestore
   useEffect(() => {
-    if (!isSupabaseConfigured()) return;
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) loadUserProfile(session.user);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        loadUserProfile(session.user);
-      } else {
-        setCurrentUser(null);
+    const unsubscribe = subscribeAuthState((userProfile) => {
+      setCurrentUser(userProfile);
+      if (userProfile?.role === 'admin') {
+        setCurrentView('admin');
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => unsubscribe();
   }, []);
 
-  const loadUserProfile = async (user) => {
-    const { data } = await supabase.from('users').select('*').eq('id', user.id).single();
-    const profile = data || { id: user.id, email: user.email, role: 'user' };
-    setCurrentUser(profile);
-    if (profile.role === 'admin') {
-      setCurrentView('admin');
-    }
-  };
-
   const handleLogout = async () => {
-    if (isSupabaseConfigured()) {
-      await supabase.auth.signOut();
-    }
+    await logoutUser();
     setCurrentUser(null);
     setCurrentView('public');
   };
@@ -65,7 +68,14 @@ export default function App() {
     // Jika masuk sebagai admin, otomatis arahkan ke dashboard Administrasi Perpustakaan (SLiMS)
     if (user.role === 'admin') {
       setCurrentView('admin');
+    } else {
+      setCurrentView('profile');
     }
+  };
+
+  const openAuthWithMode = (mode = 'login') => {
+    setAuthMode(mode);
+    setIsAuthOpen(true);
   };
 
   // ================= JIKA TAMPILAN ADMIN AKTIF =================
@@ -99,112 +109,93 @@ export default function App() {
         </div>
       )}
 
-      {/* 1. Header & Navigation (Digilib UIM) */}
+      {/* 1. Top Bar: Jam Live, Kontrol Bahasa, Notifikasi & Akses Masuk / Daftar Tunggal */}
+      <TopBar
+        currentUser={currentUser}
+        onOpenAuth={openAuthWithMode}
+        onLogout={handleLogout}
+        onOpenProfile={() => setCurrentView('profile')}
+        onOpenNotification={() => setIsNotificationOpen(true)}
+      />
+
+      {/* 2. Brand Header: Logo UIM & Slogan "Literasi untuk Masa Depan" */}
+      <BrandHeader
+        onGoHome={() => {
+          setActiveTab('beranda');
+          setCurrentView('public');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+      />
+
+      {/* 3. Solid Green Navigation Bar */}
       <Navbar
         currentUser={currentUser}
-        onOpenAuth={() => setIsAuthOpen(true)}
+        onOpenAuth={() => openAuthWithMode('login')}
         onLogout={handleLogout}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onOpenAdminVerification={() => setCurrentView('admin')}
+        onOpenProfile={() => setCurrentView('profile')}
+        onOpenNotification={() => setIsNotificationOpen(true)}
       />
 
-      {/* 2. Konten Halaman Utama */}
+      {/* 4. Konten Halaman Utama / Area Anggota */}
       <main className="flex-1">
-        <Home
-          currentUser={currentUser}
-          activeTab={activeTab}
-          searchQuery={searchQuery}
-          setSearchQuery={setSearchQuery}
-          onOpenAuth={() => setIsAuthOpen(true)}
-          onSwitchToAdmin={() => setCurrentView('admin')}
-          onOpenAdminVerification={() => setIsAdminVerificationOpen(true)}
-        />
+        {currentView === 'profile' ? (
+          <UserProfile
+            currentUser={currentUser}
+            onBackToHome={() => setCurrentView('public')}
+            onLogout={handleLogout}
+            onSelectBook={(book) => {
+              setCurrentView('public');
+              setSearchQuery(book.judul);
+              window.scrollTo({ top: 500, behavior: 'smooth' });
+            }}
+          />
+        ) : (
+          <Home
+            currentUser={currentUser}
+            activeTab={activeTab}
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            onOpenAuth={() => openAuthWithMode('login')}
+            onSwitchToAdmin={() => setCurrentView('admin')}
+            onOpenAdminVerification={() => setIsAdminVerificationOpen(true)}
+          />
+        )}
       </main>
 
-      {/* 3. Auth Modal (Mahasiswa via KTM & Admin via Username/Password) */}
+      {/* 5. Auth Modal (Mahasiswa via KTM & Admin via Username/Password) */}
       <AuthModal
         isOpen={isAuthOpen}
+        initialMode={authMode}
         onClose={() => setIsAuthOpen(false)}
         onAuthSuccess={handleAuthSuccess}
       />
 
-      {/* 4. Panel Verifikasi Mahasiswa Baru */}
+      {/* 6. Panel Verifikasi Mahasiswa Baru */}
       <AdminVerificationModal
         isOpen={isAdminVerificationOpen}
         onClose={() => setIsAdminVerificationOpen(false)}
       />
 
-      {/* 5. Footer Resmi Perpustakaan Universitas Islam Madura */}
-      <footer className="bg-[#022c22] text-white pt-10 pb-6 border-t-4 border-[#047857]">
-        <div className="max-w-6xl mx-auto px-4 sm:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 pb-8 border-b border-emerald-900/60 text-xs text-emerald-100/80">
-            {/* Kolom 1: Profil UIM */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <UimLogo className="w-10 h-10" />
-                <div>
-                  <h4 className="font-bold text-white text-sm">UNIVERSITAS ISLAM MADURA</h4>
-                  <p className="text-[11px] text-amber-300 font-semibold">PERPUSTAKAAN PUSAT (DIGILIB UIM)</p>
-                </div>
-              </div>
-              <p className="text-emerald-100/70 leading-relaxed text-[11px]">
-                Mewujudkan pusat keilmuan, riset literatur Islam, dan penyediaan referensi ilmiah berbasis teknologi cerdas di Madura.
-              </p>
-            </div>
+      {/* 7. Modal Notifikasi & Pengumuman Resmi UIM */}
+      <NotificationModal
+        isOpen={isNotificationOpen}
+        onClose={() => setIsNotificationOpen(false)}
+        currentUser={currentUser}
+      />
 
-            {/* Kolom 2: Sumber Daya Digital */}
-            <div className="space-y-2">
-              <h5 className="font-bold text-white text-sm uppercase text-amber-300">Khazanah Koleksi</h5>
-              <ul className="space-y-1.5 text-[11px]">
-                <li><a href="#katalog-section" className="hover:text-amber-300 transition-colors">Katalog Koleksi Populer (OPAC)</a></li>
-                <li><a href="#rekomendasi-section" className="hover:text-amber-300 transition-colors">Sistem Rekomendasi Cerdas</a></li>
-                <li><a href="#layanan-section" className="hover:text-amber-300 transition-colors">Repositori Skripsi & Tugas Akhir</a></li>
-                <li><a href="#layanan-section" className="hover:text-amber-300 transition-colors">Jurnal Ilmiah Civitas UIM</a></li>
-              </ul>
-            </div>
-
-            {/* Kolom 3: Layanan Pemustaka */}
-            <div className="space-y-2">
-              <h5 className="font-bold text-white text-sm uppercase text-amber-300">Layanan Pemustaka</h5>
-              <ul className="space-y-1.5 text-[11px]">
-                <li><button onClick={() => setIsAuthOpen(true)} className="hover:text-amber-300 transition-colors text-left">Pendaftaran Anggota Mahasiswa (KTM)</button></li>
-                <li><a href="#katalog-section" className="hover:text-amber-300 transition-colors">Sirkulasi & Peminjaman Mandiri</a></li>
-                <li><a href="#layanan-section" className="hover:text-amber-300 transition-colors">Surat Keterangan Bebas Pustaka</a></li>
-                <li><a href="#layanan-section" className="hover:text-amber-300 transition-colors">Penyerahan Skripsi Digital</a></li>
-              </ul>
-            </div>
-
-            {/* Kolom 4: Kontak & Lokasi Kampus */}
-            <div className="space-y-2">
-              <h5 className="font-bold text-white text-sm uppercase text-amber-300">Kontak Perpustakaan</h5>
-              <p className="text-[11px] leading-relaxed">
-                Gedung Perpustakaan Pusat UIM<br />
-                Jl. Raya Bettet No. 49, Pamekasan, Jawa Timur<br />
-                Email: perpustakaan@uim.ac.id
-              </p>
-              <div className="pt-2 text-[10px] text-emerald-300 font-semibold">
-                Kode Kampus: 071064
-              </div>
-            </div>
-          </div>
-
-          {/* Widget Statistik Pengunjung Real-Time (Blueprint 5.B & Gap 2) */}
-          <div className="py-6 border-b border-emerald-900/60">
-            <VisitorCounterWidget variant="footer" />
-          </div>
-
-          <div className="pt-6 flex flex-col sm:flex-row items-center justify-between text-[11px] text-emerald-200/60 gap-3">
-            <p>© 2026 Perpustakaan Universitas Islam Madura (UIM Pamekasan). Hak Cipta Dilindungi.</p>
-            <div className="flex items-center gap-3">
-              <span className="flex items-center gap-1 text-emerald-300">
-                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                <span>AI Collaborative Filtering Active</span>
-              </span>
-            </div>
-          </div>
-        </div>
-      </footer>
+      {/* 8. Footer Resmi UIM */}
+      <FooterUIM />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <LanguageProvider>
+      <MainApp />
+    </LanguageProvider>
   );
 }

@@ -1,18 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import {
   getStoredMembers,
-  registerStudentMember,
+  subscribeMembers,
   updateMemberStatus,
-  countPendingVerifications
+  deleteMember,
+  countPendingVerifications,
+  registerStudentMember
 } from '../lib/memberService';
 import {
   getStoredBooks,
+  subscribeBooks,
   addBibliografi,
   updateBibliografi,
   deleteBibliografi
 } from '../lib/bookService';
 import {
   getStoredLoans,
+  subscribeLoans,
   createLoan,
   returnLoan,
   renewLoan
@@ -21,6 +25,33 @@ import {
   getVisitorStats,
   subscribeVisitorStats
 } from '../lib/visitorService';
+import {
+  fetchPendingStagingData,
+  approveStagingItem,
+  rejectStagingItem,
+  ingestStagingData
+} from '../lib/stagingService';
+import {
+  evaluateSimilarityMatrix,
+  runRecommendationEvaluation,
+  RESEARCH_BENCHMARK_DATASET
+} from '../lib/recommendationBenchmark';
+import {
+  parseSlimsXml,
+  parseSlimsJson,
+  exportToSlimsJson,
+  testSlimsConnection,
+  getSlimsConfig,
+  saveSlimsConfig
+} from '../lib/slimsService';
+import { clearAllSystemData } from '../lib/databaseResetService';
+import {
+  getStoredFeedbacks,
+  subscribeFeedbacks,
+  deleteFeedbackItem,
+  replyFeedbackItem
+} from '../lib/feedbackService';
+import JournalPortalModal from '../components/JournalPortalModal';
 import {
   Menu,
   BookOpen,
@@ -73,7 +104,10 @@ import {
   CheckCircle2,
   AlertCircle,
   QrCode,
-  Activity
+  Activity,
+  MessageSquare,
+  Star,
+  CornerDownRight
 } from 'lucide-react';
 
 export default function AdminDashboard({
@@ -91,8 +125,18 @@ export default function AdminDashboard({
   const [authoritySubTab, setAuthoritySubTab] = useState('pengarang'); // 'pengarang' | 'subjek' | 'penerbit' | 'lokasiRak'
   const [inventorySubTab, setInventorySubTab] = useState('fisik'); // 'fisik' | 'hilang' | 'rusak'
   const [systemSubTab, setSystemSubTab] = useState('pengaturan_sistem'); // SLiMS 9 Modul Sistem sub-tabs
-  const [reportSubTab, setReportSubTab] = useState('statistik'); // 'statistik' | 'populer' | 'prodi'
+  const [reportSubTab, setReportSubTab] = useState('statistik'); // 'statistik' | 'populer' | 'prodi' | 'evaluasiCF'
   const [serialSubTab, setSerialSubTab] = useState('daftar'); // 'daftar' | 'kardeks'
+
+  // States untuk Evaluasi Riset Rekomendasi (Item-Based Collaborative Filtering)
+  const [benchmarkMetrics, setBenchmarkMetrics] = useState(() => runRecommendationEvaluation(3));
+  const [similarityData, setSimilarityData] = useState(() => evaluateSimilarityMatrix());
+  const [isEvaluatingCF, setIsEvaluatingCF] = useState(false);
+
+  // States untuk SLiMS 9.8.0 Bulian Data Exchange & API Sync
+  const [slimsConfigState, setSlimsConfigState] = useState(getSlimsConfig());
+  const [slimsImportPreview, setSlimsImportPreview] = useState([]);
+  const [slimsConnStatus, setSlimsConnStatus] = useState(null);
 
   // Modals & Panels
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -100,6 +144,7 @@ export default function AdminDashboard({
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [adminTheme, setAdminTheme] = useState('blue'); // 'blue' | 'emerald' | 'indigo' | 'slate'
+  const [isJournalPortalOpen, setIsJournalPortalOpen] = useState(false);
 
   // State Profil Admin
   const [adminProfile, setAdminProfile] = useState({
@@ -112,6 +157,91 @@ export default function AdminDashboard({
   const [books, setBooks] = useState([]);
   const [members, setMembers] = useState([]);
   const [loans, setLoans] = useState([]);
+  const [adminFeedbacks, setAdminFeedbacks] = useState([]);
+  const [feedbackSubTab, setFeedbackSubTab] = useState('semua');
+  const [feedbackFilterCategory, setFeedbackFilterCategory] = useState('semua');
+  const [adminReplyText, setAdminReplyText] = useState('');
+  const [replyingFeedbackId, setReplyingFeedbackId] = useState(null);
+
+  // Handler Reset / Pengosongan Basis Data untuk Pengujian Mandiri
+  const handleWipeDatabase = async () => {
+    const confirmReset = window.confirm(
+      'PERINGATAN MODE UJI COBA MANDIRI:\n\nApakah Anda yakin ingin mengosongkan seluruh basis data (koleksi buku, anggota non-admin, sirkulasi, rating, komentar, dan riwayat)?\n\nSemua data akan di-reset ke 0 untuk keperluan pengujian mandiri.'
+    );
+    if (!confirmReset) return;
+
+    try {
+      await clearAllSystemData();
+      setBooks([]);
+      setMembers([]);
+      setLoans([]);
+      setAdminFeedbacks([]);
+      setSystemAlertMessage('Seluruh basis data perpustakaan telah berhasil dikosongkan untuk pengujian mandiri.');
+      alert('Basis data perpustakaan telah berhasil dikosongkan secara menyeluruh!');
+    } catch (err) {
+      alert('Gagal mengosongkan basis data: ' + err.message);
+    }
+  };
+
+  // Handler Impor Berkas SLiMS 9.8.0 Bulian (XML / JSON)
+  const handleSlimsFileImport = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target.result;
+        let parsed = [];
+        if (file.name.endsWith('.xml') || content.trim().startsWith('<')) {
+          parsed = parseSlimsXml(content);
+        } else {
+          parsed = parseSlimsJson(JSON.parse(content));
+        }
+
+        if (parsed.length === 0) {
+          alert('Tidak ada data bibliografi yang valid ditemukan di dalam file.');
+          return;
+        }
+
+        setSlimsImportPreview(parsed);
+        alert(`Berhasil membaca ${parsed.length} data bibliografi dari ${file.name}. Silakan periksa pratinjau.`);
+      } catch (err) {
+        alert('Gagal memproses berkas SLiMS: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleSaveSlimsImportToCatalog = async () => {
+    if (slimsImportPreview.length === 0) return;
+    try {
+      for (const item of slimsImportPreview) {
+        await addBibliografi(item);
+      }
+      alert(`Sukses menambahkan ${slimsImportPreview.length} koleksi ke katalog Cloud Firestore!`);
+      setSlimsImportPreview([]);
+    } catch (err) {
+      alert('Terjadi kendala saat menyimpan ke katalog: ' + err.message);
+    }
+  };
+
+  const handleDownloadSlimsExport = () => {
+    const jsonStr = exportToSlimsJson(books);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `katalog_perpustakaan_uim_slims9_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleTestSlimsConn = async () => {
+    setSlimsConnStatus('Sedang menguji koneksi ke server SLiMS...');
+    const result = await testSlimsConnection(slimsConfigState.apiUrl);
+    setSlimsConnStatus(result.message);
+  };
 
   // State Bibliografi
   const [selectedBookIds, setSelectedBookIds] = useState(new Set());
@@ -289,10 +419,20 @@ export default function AdminDashboard({
     volume: 'Vol. 1 No. 1'
   });
 
+  // State Data Staging Area (Gap 1 / Fokus 2 & 3)
+  const [stagingList, setStagingList] = useState([]);
+  const [editingStaging, setEditingStaging] = useState(null);
+
+  const loadStagingData = async () => {
+    const list = await fetchPendingStagingData();
+    setStagingList(list);
+  };
+
   const loadAllData = () => {
     setBooks(getStoredBooks());
     setMembers(getStoredMembers());
     setLoans(getStoredLoans());
+    loadStagingData();
   };
 
   // State Statistik Pengunjung Real-Time (Blueprint 5.B)
@@ -300,11 +440,74 @@ export default function AdminDashboard({
 
   useEffect(() => {
     loadAllData();
-    const unsub = subscribeVisitorStats((newStats) => {
+    setAdminFeedbacks(getStoredFeedbacks());
+    const unsubBooks = subscribeBooks((liveBooks) => setBooks(liveBooks));
+    const unsubMembers = subscribeMembers((liveMembers) => setMembers(liveMembers));
+    const unsubLoans = subscribeLoans((liveLoans) => setLoans(liveLoans));
+    const unsubVisitors = subscribeVisitorStats((newStats) => {
       setVisitorStats({ ...newStats });
     });
-    return () => unsub();
+    const unsubFeedbacks = subscribeFeedbacks((liveFeedbacks) => {
+      setAdminFeedbacks(liveFeedbacks);
+    });
+
+    return () => {
+      unsubBooks();
+      unsubMembers();
+      unsubLoans();
+      unsubVisitors();
+      unsubFeedbacks();
+    };
   }, []);
+
+  // Handlers Kurasi Data Staging Area
+  const handleApproveStaging = async (stagingItem) => {
+    try {
+      await approveStagingItem(stagingItem.id, stagingItem.metadata);
+      await loadStagingData();
+      loadAllData();
+      alert(`Data bibliografi "${stagingItem.metadata?.judul}" berhasil disetujui dan masuk ke katalog utama Firestore!`);
+    } catch (e) {
+      alert('Gagal menyetujui data: ' + e.message);
+    }
+  };
+
+  const handleRejectStaging = async (stagingId) => {
+    const reason = prompt('Masukkan alasan penolakan metadata ini:', 'Format data tidak sesuai standar');
+    if (reason !== null) {
+      await rejectStagingItem(stagingId, reason);
+      await loadStagingData();
+      alert('Data staging berhasil ditolak.');
+    }
+  };
+
+  const handleSimulateIngestion = async (type) => {
+    const sample = type === 'ocr' ? {
+      sumber: 'ocr',
+      metadata: {
+        judul: 'Pengantar Sistem Informasi Berbasis AI di Kampus',
+        penulis: 'Dr. Mohammad Ridwan, M.Kom',
+        isbn: '978-602-998-123-9',
+        kategori: 'Teknologi Informasi',
+        sinopsis: 'Hasil ekstraksi OCR sampul buku fisik perpustakaan UIM angkatan 2026.'
+      },
+      catatan: 'Ekstraksi otonom mesin pemindai OCR Fokus 3'
+    } : {
+      sumber: 'crawling',
+      metadata: {
+        judul: 'Penerapan Fiqh Muamalah Kontemporer pada Bank Wakaf Mikro Madura',
+        penulis: 'Ahmad Muzakki, M.E.I',
+        isbn: '978-602-555-881-2',
+        kategori: 'Ekonomi Islam',
+        sinopsis: 'Hasil penarikan web crawling otomatis dari repositori riset jurnal eksternal.'
+      },
+      catatan: 'Ekstraksi bot Web Crawling Fokus 2'
+    };
+
+    await ingestStagingData(sample);
+    await loadStagingData();
+    alert(`Berhasil mensimulasikan payload dari ${type.toUpperCase()} ke Staging Area!`);
+  };
 
   // Theme color styling
   const themeColors = {
@@ -346,36 +549,44 @@ export default function AdminDashboard({
   };
 
   // Bibliografi Handlers
-  const handleBookFormSubmit = (e) => {
+  const handleBookFormSubmit = async (e) => {
     e.preventDefault();
     if (!bookFormData.judul.trim() || !bookFormData.penulis.trim()) {
       alert('Judul dan Pengarang wajib diisi.');
       return;
     }
-    if (editingBook) {
-      updateBibliografi(editingBook.id, bookFormData);
-    } else {
-      addBibliografi(bookFormData);
+    try {
+      if (editingBook) {
+        await updateBibliografi(editingBook.id, bookFormData);
+      } else {
+        await addBibliografi(bookFormData);
+      }
+      loadAllData();
+      setIsBookFormOpen(false);
+      setEditingBook(null);
+    } catch (err) {
+      alert('Gagal menyimpan bibliografi: ' + err.message);
     }
-    loadAllData();
-    setIsBookFormOpen(false);
-    setEditingBook(null);
   };
 
-  const handleDeleteSelectedBooks = () => {
+  const handleDeleteSelectedBooks = async () => {
     if (selectedBookIds.size === 0) {
       alert('Pilih data bibliografi yang ingin dihapus.');
       return;
     }
     if (confirm(`Yakin ingin menghapus ${selectedBookIds.size} data terpilih?`)) {
-      deleteBibliografi(Array.from(selectedBookIds));
-      setSelectedBookIds(new Set());
-      loadAllData();
+      try {
+        await deleteBibliografi(Array.from(selectedBookIds));
+        setSelectedBookIds(new Set());
+        loadAllData();
+      } catch (err) {
+        alert('Gagal menghapus data: ' + err.message);
+      }
     }
   };
 
   // Sirkulasi Handlers
-  const handleCreateLoanSubmit = (e) => {
+  const handleCreateLoanSubmit = async (e) => {
     e.preventDefault();
     const member = members.find((m) => m.nim === loanNim.trim());
     if (!member) {
@@ -391,47 +602,62 @@ export default function AdminDashboard({
       alert('Pilih buku yang valid.');
       return;
     }
-    createLoan({
-      nim: member.nim,
-      nama: member.nama,
-      bookId: book.id,
-      judul: book.judul,
-      cover_url: book.cover_url
-    });
-    loadAllData();
-    setIsLoanFormOpen(false);
-    setLoanNim('');
-    setLoanBookId('');
-    alert('Transaksi peminjaman buku berhasil dicatat!');
-  };
-
-  const handleReturnBook = (loanId) => {
-    const res = returnLoan(loanId);
-    loadAllData();
-    if (res.denda > 0) {
-      alert(`Buku berhasil dikembalikan dengan denda keterlambatan: Rp ${res.denda.toLocaleString('id-ID')}`);
-    } else {
-      alert('Buku berhasil dikembalikan tepat waktu!');
+    try {
+      await createLoan({
+        nim: member.nim,
+        nama: member.nama,
+        bookId: book.id,
+        judul: book.judul,
+        cover_url: book.cover_url
+      });
+      loadAllData();
+      setIsLoanFormOpen(false);
+      setLoanNim('');
+      setLoanBookId('');
+      alert('Transaksi peminjaman buku berhasil dicatat!');
+    } catch (err) {
+      alert('Gagal mencatat peminjaman: ' + err.message);
     }
   };
 
-  const handleRenewBook = (loanId) => {
-    renewLoan(loanId);
-    loadAllData();
-    alert('Masa pinjam berhasil diperpanjang (+7 Hari)!');
+  const handleReturnBook = async (loanId) => {
+    try {
+      const res = await returnLoan(loanId);
+      loadAllData();
+      if (res && res.denda > 0) {
+        alert(`Buku berhasil dikembalikan dengan denda keterlambatan: Rp ${res.denda.toLocaleString('id-ID')}`);
+      } else {
+        alert('Buku berhasil dikembalikan tepat waktu!');
+      }
+    } catch (err) {
+      alert('Gagal mengembalikan buku: ' + err.message);
+    }
+  };
+
+  const handleRenewBook = async (loanId) => {
+    try {
+      await renewLoan(loanId);
+      loadAllData();
+      alert('Masa pinjam berhasil diperpanjang (+7 Hari)!');
+    } catch (err) {
+      alert('Gagal memperpanjang masa pinjam: ' + err.message);
+    }
   };
 
   // Keanggotaan Handlers
-  const handleVerifyMember = (id, status) => {
-    updateMemberStatus(id, status);
-    loadAllData();
+  const handleVerifyMember = async (id, status) => {
+    try {
+      await updateMemberStatus(id, status);
+      loadAllData();
+    } catch (err) {
+      alert('Gagal memperbarui status anggota: ' + err.message);
+    }
   };
 
-  const handleAddMemberSubmit = (e) => {
+  const handleAddMemberSubmit = async (e) => {
     e.preventDefault();
     try {
-      const created = registerStudentMember(newMemberData);
-      updateMemberStatus(created.id, 'verified');
+      const created = await registerStudentMember(newMemberData);
       loadAllData();
       setIsMemberFormOpen(false);
       setNewMemberData({
@@ -640,7 +866,8 @@ export default function AdminDashboard({
           salinKatalog: 'Layanan MARC SRU',
           cetakLabel: 'Pencetakan Label',
           cetakBarcode: 'Cetak Barcode',
-          plugins: 'Penghitung Dibaca'
+          plugins: 'Penghitung Dibaca',
+          staging: 'Verifikasi Data Staging (Gap 1)'
         }[biblioSubTab] || 'Katalog';
       case 'Sirkulasi':
         return {
@@ -838,6 +1065,31 @@ export default function AdminDashboard({
                 Penghitung Koleksi Dibaca
               </button>
             </div>
+
+            <div className="space-y-1 pt-1 border-t border-white/10">
+              <div className="text-[10px] font-bold text-amber-300 uppercase px-2 tracking-wider flex items-center justify-between">
+                <span>Staging Area (Gap 1)</span>
+                {stagingList.length > 0 && (
+                  <span className="bg-amber-400 text-stone-900 text-[10px] px-1.5 py-0.2 rounded-full font-bold">
+                    {stagingList.length}
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => handleSubClick(() => setBiblioSubTab('staging'))}
+                className={`w-full text-left px-2.5 py-1.5 rounded flex items-center justify-between ${biblioSubTab === 'staging' ? 'bg-white/25 font-bold' : 'hover:bg-white/15'}`}
+              >
+                <div className="flex items-center gap-1.5">
+                  <Database className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Verifikasi Data Staging</span>
+                </div>
+                {stagingList.length > 0 && (
+                  <span className="bg-amber-400 text-stone-900 text-[10px] px-1.5 py-0.5 rounded-full font-bold">
+                    {stagingList.length}
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
         )}
 
@@ -968,9 +1220,13 @@ export default function AdminDashboard({
         {activeNavTab === 'Pelaporan' && (
           <div className="space-y-1">
             <div className="text-[10px] font-bold text-sky-200 uppercase px-2 tracking-wider">Statistik & Rekap</div>
-            <button onClick={() => handleSubClick(() => setReportSubTab('statistik'))} className={`w-full text-left px-2.5 py-2 rounded ${reportSubTab === 'statistik' ? 'bg-white/25 font-bold' : 'hover:bg-white/15'}`}>Statistik Sirkulasi</button>
-            <button onClick={() => handleSubClick(() => setReportSubTab('populer'))} className={`w-full text-left px-2.5 py-2 rounded ${reportSubTab === 'populer' ? 'bg-white/25 font-bold' : 'hover:bg-white/15'}`}>Buku Terpopuler</button>
-            <button onClick={() => handleSubClick(() => setReportSubTab('prodi'))} className={`w-full text-left px-2.5 py-2 rounded ${reportSubTab === 'prodi' ? 'bg-white/25 font-bold' : 'hover:bg-white/15'}`}>Rekapitulasi per Prodi</button>
+            <button onClick={() => handleSubClick(() => setReportSubTab('statistik'))} className={`w-full text-left px-2.5 py-2 rounded text-xs ${reportSubTab === 'statistik' ? 'bg-white/25 font-bold' : 'hover:bg-white/15'}`}>Statistik Sirkulasi</button>
+            <button onClick={() => handleSubClick(() => setReportSubTab('populer'))} className={`w-full text-left px-2.5 py-2 rounded text-xs ${reportSubTab === 'populer' ? 'bg-white/25 font-bold' : 'hover:bg-white/15'}`}>Buku Terpopuler</button>
+            <button onClick={() => handleSubClick(() => setReportSubTab('prodi'))} className={`w-full text-left px-2.5 py-2 rounded text-xs ${reportSubTab === 'prodi' ? 'bg-white/25 font-bold' : 'hover:bg-white/15'}`}>Rekapitulasi per Prodi</button>
+            <button onClick={() => handleSubClick(() => setReportSubTab('evaluasiCF'))} className={`w-full text-left px-2.5 py-2 rounded text-xs flex items-center justify-between ${reportSubTab === 'evaluasiCF' ? 'bg-white/25 font-bold text-amber-300' : 'hover:bg-white/15'}`}>
+              <span>Evaluasi Riset Rekomendasi</span>
+              <span className="text-[9px] bg-amber-400 text-slate-950 font-black px-1.5 py-0.5 rounded">IBCF</span>
+            </button>
           </div>
         )}
 
@@ -986,6 +1242,38 @@ export default function AdminDashboard({
             </button>
             <button onClick={() => handleSubClick(() => setSerialSubTab('daftar'))} className={`w-full text-left px-2.5 py-2 rounded ${serialSubTab === 'daftar' ? 'bg-white/25 font-bold' : 'hover:bg-white/15'}`}>Daftar Terbitan Berseri</button>
             <button onClick={() => handleSubClick(() => setSerialSubTab('kardeks'))} className={`w-full text-left px-2.5 py-2 rounded ${serialSubTab === 'kardeks' ? 'bg-white/25 font-bold' : 'hover:bg-white/15'}`}>Kardeks & Langganan</button>
+          </div>
+        )}
+
+        {/* 10. SIDEBAR KOMENTAR & MASUKAN PEMUSTAKA */}
+        {activeNavTab === 'Komentar Pemustaka' && (
+          <div className="space-y-2">
+            <div className="text-[10px] font-bold text-sky-200 uppercase px-2 tracking-wider">Kotak Saran Civitas</div>
+            <button
+              onClick={() => handleSubClick(() => setFeedbackSubTab('semua'))}
+              className={`w-full text-left px-2.5 py-2 rounded text-xs flex items-center justify-between ${feedbackSubTab === 'semua' ? 'bg-white/25 font-bold' : 'hover:bg-white/15'}`}
+            >
+              <span>Semua Komentar</span>
+              <span className="text-[10px] bg-sky-500 text-white font-bold px-1.5 py-0.2 rounded-full">{adminFeedbacks.length}</span>
+            </button>
+            <button
+              onClick={() => handleSubClick(() => setFeedbackSubTab('mahasiswa'))}
+              className={`w-full text-left px-2.5 py-2 rounded text-xs flex items-center justify-between ${feedbackSubTab === 'mahasiswa' ? 'bg-white/25 font-bold' : 'hover:bg-white/15'}`}
+            >
+              <span>Mahasiswa</span>
+              <span className="text-[10px] bg-sky-500/50 text-white font-bold px-1.5 py-0.2 rounded-full">
+                {adminFeedbacks.filter((f) => f.peran === 'Mahasiswa').length}
+              </span>
+            </button>
+            <button
+              onClick={() => handleSubClick(() => setFeedbackSubTab('dosen'))}
+              className={`w-full text-left px-2.5 py-2 rounded text-xs flex items-center justify-between ${feedbackSubTab === 'dosen' ? 'bg-white/25 font-bold' : 'hover:bg-white/15'}`}
+            >
+              <span>Dosen & Peneliti</span>
+              <span className="text-[10px] bg-sky-500/50 text-white font-bold px-1.5 py-0.2 rounded-full">
+                {adminFeedbacks.filter((f) => f.peran === 'Dosen').length}
+              </span>
+            </button>
           </div>
         )}
       </>
@@ -1019,7 +1307,8 @@ export default function AdminDashboard({
                 'Inventarisasi',
                 'Sistem',
                 'Pelaporan',
-                'Kendali Terbitan Berseri'
+                'Kendali Terbitan Berseri',
+                'Komentar Pemustaka'
               ].map((tab) => (
                 <button
                   key={tab}
@@ -1037,6 +1326,11 @@ export default function AdminDashboard({
                   {tab === 'Keanggotaan' && pendingCount > 0 && (
                     <span className="ml-1.5 bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full">
                       {pendingCount}
+                    </span>
+                  )}
+                  {tab === 'Komentar Pemustaka' && adminFeedbacks.length > 0 && (
+                    <span className="ml-1.5 bg-emerald-600 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full">
+                      {adminFeedbacks.length}
                     </span>
                   )}
                   {tab === 'Sirkulasi' && totalBorrowed > 0 && (
@@ -1480,14 +1774,129 @@ export default function AdminDashboard({
                 </div>
               )}
 
-              {/* SUBTAB 4: SALIN KATALOG (MARC / Z3950) */}
+              {/* SUBTAB 4: SALIN KATALOG & INTEGRASI SLIMS 9.8.0 BULIAN */}
               {biblioSubTab === 'salinKatalog' && (
-                <div className="space-y-4 max-w-2xl">
-                  <h2 className="text-xl font-bold text-slate-800">Layanan Salin Katalog (Z39.50 & MARC SRU)</h2>
-                  <p className="text-xs text-slate-500">Tarik metadata bibliografi otomatis dari server Perpustakaan Nasional RI (Perpusnas) atau Library of Congress.</p>
-                  <div className="flex gap-2">
-                    <input type="text" placeholder="Masukkan ISBN (Contoh: 978602...)" className="flex-1 px-3 py-2 border rounded text-xs" />
-                    <button onClick={() => alert('Fitur koneksi Z39.50 server siap diintegrasikan.')} className="px-4 py-2 bg-[#0284c7] text-white font-bold rounded text-xs">Cari Metadata</button>
+                <div className="space-y-6 max-w-4xl">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-800">
+                      Integrasi SLiMS 9.8.0 Bulian & Salin Katalog (MARC / XML)
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Pertukaran data bibliografi dua arah antara OPAC Web Perpustakaan UIM dengan sistem otomasi SLiMS 9.8.0 Bulian kampus.
+                    </p>
+                  </div>
+
+                  {/* Panel A: Impor Berkas SLiMS (XML / JSON) */}
+                  <div className="p-5 bg-white border border-slate-200 rounded-xl shadow-xs space-y-4">
+                    <div className="flex items-center justify-between border-b pb-3">
+                      <div>
+                        <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
+                          <Upload className="w-4 h-4 text-emerald-700" />
+                          <span>Impor Bibliografi Berkas SLiMS (XML / JSON)</span>
+                        </h3>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Unggah file ekspor dari SLiMS 9.8.0 Bulian (Menu Bibliografi &rarr; Ekspor Data).
+                        </p>
+                      </div>
+                      <label className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-lg cursor-pointer shadow-xs transition-colors flex items-center gap-1.5">
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>Pilih Berkas SLiMS</span>
+                        <input
+                          type="file"
+                          accept=".xml,.json"
+                          onChange={handleSlimsFileImport}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+
+                    {/* Pratinjau Berkas SLiMS yang Diunggah */}
+                    {slimsImportPreview.length > 0 && (
+                      <div className="space-y-3 bg-emerald-50/50 p-4 rounded-xl border border-emerald-200">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-emerald-900">
+                            Pratinjau Hasil Pembacaan Berkas ({slimsImportPreview.length} Koleksi Ditemukan)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleSaveSlimsImportToCatalog}
+                            className="px-3.5 py-1.5 bg-[#047857] hover:bg-[#064e3b] text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition-colors"
+                          >
+                            <CheckCircle className="w-3.5 h-3.5" />
+                            <span>Simpan ke Katalog Cloud Firestore</span>
+                          </button>
+                        </div>
+
+                        <div className="max-h-48 overflow-y-auto divide-y divide-emerald-100 bg-white rounded-lg border border-emerald-200 text-xs">
+                          {slimsImportPreview.slice(0, 10).map((b, idx) => (
+                            <div key={idx} className="p-2.5 flex items-center justify-between">
+                              <div>
+                                <p className="font-bold text-slate-800">{b.judul}</p>
+                                <p className="text-[11px] text-slate-500">
+                                  {b.penulis} • {b.penerbit} ({b.tahun}) • Rak: {b.lokasi_rak}
+                                </p>
+                              </div>
+                              <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded font-mono text-slate-600">
+                                ISBN: {b.isbn}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Panel B: Ekspor Katalog ke Format SLiMS JSON */}
+                  <div className="p-5 bg-white border border-slate-200 rounded-xl shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
+                        <Download className="w-4 h-4 text-blue-700" />
+                        <span>Ekspor Koleksi ke Format SLiMS 9.8.0 Bulian</span>
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Unduh seluruh metadata koleksi aktif ({books.length} judul) dalam format JSON terstandarisasi untuk diimpor ke sistem SLiMS lokal.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleDownloadSlimsExport}
+                      className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs rounded-lg shadow-xs flex items-center gap-1.5 shrink-0 transition-colors"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Unduh Berkas JSON</span>
+                    </button>
+                  </div>
+
+                  {/* Panel C: Pengujian Koneksi API Server SLiMS */}
+                  <div className="p-5 bg-white border border-slate-200 rounded-xl shadow-xs space-y-3">
+                    <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
+                      <Server className="w-4 h-4 text-purple-700" />
+                      <span>Uji Koneksi Server SLiMS Web Services</span>
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Periksa ketersediaan modul REST API / SRU pada server SLiMS 9 kampus UIM (port default lokal: 80 / 8080).
+                    </p>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={slimsConfigState.apiUrl}
+                        onChange={(e) => setSlimsConfigState({ ...slimsConfigState, apiUrl: e.target.value })}
+                        placeholder="Contoh: http://localhost/slims9_bulian/index.php?p=api"
+                        className="flex-1 px-3 py-2 border rounded-lg text-xs font-mono text-slate-700 focus:outline-none focus:border-purple-600"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleTestSlimsConn}
+                        className="px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white font-bold rounded-lg text-xs transition-colors shrink-0"
+                      >
+                        Uji Koneksi
+                      </button>
+                    </div>
+                    {slimsConnStatus && (
+                      <p className="text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-slate-700 font-mono">
+                        {slimsConnStatus}
+                      </p>
+                    )}
                   </div>
                 </div>
               )}
@@ -1556,6 +1965,115 @@ export default function AdminDashboard({
                     <span>Total Baca di Tempat Hari Ini:</span>
                     <span className="text-lg font-bold text-[#0284c7]">14 Koleksi</span>
                   </div>
+                </div>
+              )}
+
+              {/* SUBTAB 8: STAGING AREA (GAP 1 INTEGRASI FOKUS 2 & 3) */}
+              {biblioSubTab === 'staging' && (
+                <div className="space-y-4">
+                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+                    <div>
+                      <h3 className="font-bold text-emerald-900 text-sm flex items-center gap-2">
+                        <Database className="w-4 h-4 text-emerald-700" />
+                        <span>Data Staging Area (Pipeline Integrasi Crawling & OCR)</span>
+                      </h3>
+                      <p className="text-xs text-emerald-700 mt-1">
+                        Metadata dari bot Web Crawling (Fokus 2) dan scanner OCR (Fokus 3) dikurasi di sini sebelum dipublikasikan ke katalog utama Firestore.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        onClick={() => handleSimulateIngestion('crawling')}
+                        className="px-3 py-1.5 bg-white border border-emerald-300 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold rounded-lg shadow-xs"
+                      >
+                        + Simulasi Payload Crawling
+                      </button>
+                      <button
+                        onClick={() => handleSimulateIngestion('ocr')}
+                        className="px-3 py-1.5 bg-white border border-emerald-300 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold rounded-lg shadow-xs"
+                      >
+                        + Simulasi Payload OCR
+                      </button>
+                    </div>
+                  </div>
+
+                  {stagingList.length === 0 ? (
+                    <div className="p-12 text-center bg-white border border-slate-200 rounded-xl space-y-2">
+                      <CheckCircle className="w-12 h-12 text-emerald-500 mx-auto" />
+                      <h4 className="font-bold text-slate-800">Tidak ada antrean data staging</h4>
+                      <p className="text-xs text-slate-500 max-w-md mx-auto">
+                        Semua data dari sumber eksternal telah diproses atau belum ada data baru yang masuk. Gunakan tombol simulasi di atas untuk menguji alur verifikasi kurasi.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+                      <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs font-semibold text-slate-700">
+                        <span>Antrean Metadata Menunggu Kurasi Pustakawan ({stagingList.length})</span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-slate-100 text-slate-600 font-semibold border-b">
+                            <tr>
+                              <th className="p-3">Sumber</th>
+                              <th className="p-3">Judul Koleksi</th>
+                              <th className="p-3">Penulis</th>
+                              <th className="p-3">ISBN</th>
+                              <th className="p-3">Kategori</th>
+                              <th className="p-3">Catatan / Timestamp</th>
+                              <th className="p-3 text-right">Aksi Kurasi</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {stagingList.map((item) => (
+                              <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                                <td className="p-3">
+                                  <span className={`px-2 py-0.5 rounded text-[11px] font-bold uppercase ${
+                                    item.sumber === 'crawling' ? 'bg-sky-100 text-sky-800' : 'bg-purple-100 text-purple-800'
+                                  }`}>
+                                    {item.sumber}
+                                  </span>
+                                </td>
+                                <td className="p-3 font-semibold text-slate-900 max-w-xs">
+                                  {item.metadata?.judul || 'Tanpa Judul'}
+                                </td>
+                                <td className="p-3 text-slate-700">
+                                  {item.metadata?.penulis || '-'}
+                                </td>
+                                <td className="p-3 font-mono text-[11px] text-slate-600">
+                                  {item.metadata?.isbn || '-'}
+                                </td>
+                                <td className="p-3 text-slate-700">
+                                  {item.metadata?.kategori || '-'}
+                                </td>
+                                <td className="p-3 text-slate-500 text-[11px]">
+                                  <div>{item.catatan_kurasi || '-'}</div>
+                                  <div className="text-[10px] text-slate-400">
+                                    {item.created_at ? new Date(item.created_at).toLocaleString('id-ID') : '-'}
+                                  </div>
+                                </td>
+                                <td className="p-3 text-right space-x-1.5 whitespace-nowrap">
+                                  <button
+                                    onClick={() => handleApproveStaging(item)}
+                                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded text-xs inline-flex items-center gap-1 shadow-xs"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                    <span>Setujui & Publikasikan</span>
+                                  </button>
+                                  <button
+                                    onClick={() => handleRejectStaging(item.id)}
+                                    className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-semibold rounded text-xs inline-flex items-center gap-1"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                    <span>Tolak</span>
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1838,7 +2356,6 @@ export default function AdminDashboard({
               </table>
             </div>
           )}
-
           {/* ================= 6. MODUL INVENTARISASI ================= */}
           {activeNavTab === 'Inventarisasi' && (
             <div className="space-y-4 max-w-6xl">
@@ -1932,14 +2449,24 @@ export default function AdminDashboard({
                     <p className="text-slate-500 text-[11px]">Merubah preferensi aplikasi global</p>
                   </div>
 
-                  {/* Tombol Simpan di Atas */}
-                  <div>
+                  {/* Tombol Simpan & Pemeliharaan Uji Coba */}
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                     <button
                       type="button"
                       onClick={handleSaveSystemSettings}
                       className="px-4 py-2 bg-[#0284c7] hover:bg-[#0369a1] text-white font-bold text-xs rounded transition-colors shadow-xs"
                     >
                       Simpan Pengaturan
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleWipeDatabase}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded transition-colors shadow-xs flex items-center gap-1.5"
+                      title="Kosongkan seluruh data untuk pengujian mandiri dari nol"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Kosongkan Seluruh Basis Data (Uji Coba)</span>
                     </button>
                   </div>
 
@@ -3450,6 +3977,123 @@ export default function AdminDashboard({
                   </table>
                 </div>
               )}
+
+              {/* Subtab Evaluasi Penelitian Collaborative Filtering */}
+              {reportSubTab === 'evaluasiCF' && (
+                <div className="space-y-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 bg-gradient-to-r from-[#022c22] via-[#064e3b] to-[#047857] text-white rounded-2xl shadow-md">
+                    <div>
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-400 text-emerald-950 text-[10px] font-black uppercase mb-1">
+                        Framework Riset Penelitian UIM
+                      </div>
+                      <h3 className="text-lg font-bold">Evaluasi Item-Based Collaborative Filtering (IBCF)</h3>
+                      <p className="text-xs text-emerald-200 mt-0.5">
+                        Metrik akurasi pengujian leave-one-out cross validation dengan Cosine Similarity
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsEvaluatingCF(true);
+                        setTimeout(() => {
+                          setBenchmarkMetrics(runRecommendationEvaluation(3));
+                          setSimilarityData(evaluateSimilarityMatrix());
+                          setIsEvaluatingCF(false);
+                        }, 500);
+                      }}
+                      disabled={isEvaluatingCF}
+                      className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 shadow transition-all shrink-0"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isEvaluatingCF ? 'animate-spin' : ''}`} />
+                      <span>{isEvaluatingCF ? 'Menghitung...' : 'Jalankan Evaluasi Ulang'}</span>
+                    </button>
+                  </div>
+
+                  {/* 4 Kartu Metrik Evaluasi Riset */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-xs">
+                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">MAE (Mean Absolute Error)</span>
+                      <span className="text-2xl font-black text-emerald-700 mt-1 block">{benchmarkMetrics.mae}</span>
+                      <span className="text-[10px] text-slate-400 mt-0.5 block">Skala error rating 1.0 – 5.0</span>
+                    </div>
+
+                    <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-xs">
+                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">RMSE</span>
+                      <span className="text-2xl font-black text-blue-700 mt-1 block">{benchmarkMetrics.rmse}</span>
+                      <span className="text-[10px] text-slate-400 mt-0.5 block">Root Mean Squared Error</span>
+                    </div>
+
+                    <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-xs">
+                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Precision @ 3</span>
+                      <span className="text-2xl font-black text-purple-700 mt-1 block">{(benchmarkMetrics.precisionAtK * 100).toFixed(1)}%</span>
+                      <span className="text-[10px] text-slate-400 mt-0.5 block">Ketepatan Top-3 rekomendasi</span>
+                    </div>
+
+                    <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-xs">
+                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Recall @ 3 / F1</span>
+                      <span className="text-2xl font-black text-amber-600 mt-1 block">{(benchmarkMetrics.recallAtK * 100).toFixed(1)}%</span>
+                      <span className="text-[10px] text-slate-400 mt-0.5 block">F1-Score: {benchmarkMetrics.f1ScoreAtK}</span>
+                    </div>
+                  </div>
+
+                  {/* Tabel Matriks Kemiripan Cosine Antar-Koleksi */}
+                  <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+                    <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                      <div>
+                        <h4 className="font-bold text-slate-800 text-xs sm:text-sm">
+                          Matriks Kemiripan Koleksi (Cosine Similarity Pairs)
+                        </h4>
+                        <p className="text-[11px] text-slate-500">
+                          {similarityData.activePairs} pasangan buku dengan nilai kedekatan sim(A, B) &gt; 0
+                        </p>
+                      </div>
+                      <span className="text-xs bg-emerald-100 text-emerald-800 font-bold px-2.5 py-1 rounded-full">
+                        Threshold &ge; 0.00
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-100/80 text-slate-700 font-bold border-b">
+                          <tr>
+                            <th className="p-3">Koleksi A</th>
+                            <th className="p-3">Kategori A</th>
+                            <th className="p-3">Koleksi B</th>
+                            <th className="p-3">Kategori B</th>
+                            <th className="p-3 text-center">Cosine Similarity</th>
+                            <th className="p-3 text-right">Kesesuaian Subjek</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {similarityData.topPairs.slice(0, 8).map((pair, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                              <td className="p-3 font-semibold text-slate-800">{pair.bookATitle}</td>
+                              <td className="p-3 text-slate-600">{pair.kategoriA}</td>
+                              <td className="p-3 font-semibold text-slate-800">{pair.bookBTitle}</td>
+                              <td className="p-3 text-slate-600">{pair.kategoriB}</td>
+                              <td className="p-3 text-center font-mono font-bold text-emerald-700">
+                                {pair.similarity.toFixed(4)}
+                              </td>
+                              <td className="p-3 text-right">
+                                {pair.isSameCategory ? (
+                                  <span className="inline-block px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">
+                                    Subjek Sejenis
+                                  </span>
+                                ) : (
+                                  <span className="inline-block px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px]">
+                                    Lintas Bidang
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -3461,13 +4105,23 @@ export default function AdminDashboard({
                   <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Kendali Terbitan Berseri (Serials)</h1>
                   <p className="text-xs text-slate-500 mt-0.5">Pengelolaan jurnal ilmiah, majalah, dan warta berkala kampus UIM</p>
                 </div>
-                <button
-                  onClick={() => setIsSerialFormOpen(true)}
-                  className="px-4 py-2 bg-[#0284c7] hover:bg-[#0369a1] text-white font-bold text-xs rounded-lg shadow-xs flex items-center gap-1.5"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Tambah Terbitan Baru</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setIsJournalPortalOpen(true)}
+                    className="px-4 py-2 bg-[#047857] hover:bg-[#064e3b] text-white font-bold text-xs rounded-lg shadow-xs flex items-center gap-1.5"
+                    title="Buka portal publikasi dan antrean kurasi naskah jurnal mahasiswa/dosen"
+                  >
+                    <BookOpen className="w-4 h-4" />
+                    <span>Portal & Kurasi Jurnal Sivitas</span>
+                  </button>
+                  <button
+                    onClick={() => setIsSerialFormOpen(true)}
+                    className="px-4 py-2 bg-[#0284c7] hover:bg-[#0369a1] text-white font-bold text-xs rounded-lg shadow-xs flex items-center gap-1.5"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Tambah Terbitan Baru</span>
+                  </button>
+                </div>
               </div>
 
               <table className="w-full text-left text-xs border rounded overflow-hidden">
@@ -3486,6 +4140,241 @@ export default function AdminDashboard({
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* ================= 10. MODUL KOMENTAR & MASUKAN PEMUSTAKA ================= */}
+          {activeNavTab === 'Komentar Pemustaka' && (
+            <div className="space-y-4 max-w-6xl animate-fadeIn">
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                <div>
+                  <h1 className="text-2xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
+                    <MessageSquare className="w-6 h-6 text-[#047857]" />
+                    <span>Kotak Saran & Komentar Pemustaka</span>
+                  </h1>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Pengawasan kritik, saran, masukan fasilitas, dan apresiasi kepuasan sivitas akademika Universitas Islam Madura
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-600 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-2xs">
+                    Total: <strong className="text-emerald-700 font-bold">{adminFeedbacks.length}</strong> masukan pemustaka
+                  </span>
+                </div>
+              </div>
+
+              {/* Stat Cards Ringkasan */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Total Masukan</span>
+                  <div className="text-2xl font-black text-slate-800 mt-1">{adminFeedbacks.length}</div>
+                  <span className="text-[10px] text-slate-400">Tersimpan di Cloud Firestore</span>
+                </div>
+                <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Rata-rata Rating</span>
+                  <div className="text-2xl font-black text-amber-500 mt-1 flex items-center gap-1">
+                    <span>
+                      {adminFeedbacks.length > 0
+                        ? (adminFeedbacks.reduce((acc, f) => acc + (f.rating || 5), 0) / adminFeedbacks.length).toFixed(1)
+                        : '0.0'}
+                    </span>
+                    <Star className="w-5 h-5 fill-amber-400 text-amber-400" />
+                  </div>
+                  <span className="text-[10px] text-slate-400">Skor Indeks Kepuasan</span>
+                </div>
+                <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Dari Mahasiswa</span>
+                  <div className="text-2xl font-black text-blue-600 mt-1">
+                    {adminFeedbacks.filter((f) => f.peran === 'Mahasiswa').length}
+                  </div>
+                  <span className="text-[10px] text-slate-400">Aspirasi & Request</span>
+                </div>
+                <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Dari Dosen</span>
+                  <div className="text-2xl font-black text-purple-600 mt-1">
+                    {adminFeedbacks.filter((f) => f.peran === 'Dosen').length}
+                  </div>
+                  <span className="text-[10px] text-slate-400">Riset & Koleksi</span>
+                </div>
+              </div>
+
+              {/* Filter Kategori */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
+                {['semua', 'Layanan Sirkulasi', 'Koleksi Buku', 'Fasilitas Ruang Baca', 'Sistem Website', 'Saran Umum'].map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => setFeedbackFilterCategory(cat)}
+                    className={`px-3 py-1.5 rounded-lg font-bold whitespace-nowrap transition-colors ${
+                      feedbackFilterCategory === cat
+                        ? 'bg-[#047857] text-white'
+                        : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    {cat === 'semua' ? 'Semua Kategori' : cat}
+                  </button>
+                ))}
+              </div>
+
+              {/* Daftar Masukan Komentar */}
+              {adminFeedbacks.length === 0 ? (
+                <div className="p-12 text-center bg-white rounded-2xl border border-dashed border-slate-300">
+                  <MessageSquare className="w-12 h-12 text-slate-300 mx-auto mb-2" />
+                  <h3 className="font-bold text-slate-700 text-sm">Belum Ada Komentar Pemustaka</h3>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
+                    Basis data komentar saat ini kosong. Saat sivitas mengirim komentar melalui portal OPAC, masukan akan tersimpan di Firestore dan langsung tampil di sini.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {adminFeedbacks
+                    .filter((fb) => {
+                      if (feedbackSubTab === 'mahasiswa') return fb.peran === 'Mahasiswa';
+                      if (feedbackSubTab === 'dosen') return fb.peran === 'Dosen';
+                      return true;
+                    })
+                    .filter((fb) => {
+                      if (feedbackFilterCategory !== 'semua') return fb.kategori === feedbackFilterCategory;
+                      return true;
+                    })
+                    .map((fb) => (
+                      <div
+                        key={fb.id}
+                        className="p-5 bg-white rounded-2xl border border-slate-200 shadow-2xs hover:shadow-sm transition-all space-y-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-[#047857] font-black text-sm flex items-center justify-center border border-emerald-100">
+                              {fb.nama.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-bold text-slate-900 text-sm">{fb.nama}</span>
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  fb.peran === 'Dosen'
+                                    ? 'bg-purple-100 text-purple-700'
+                                    : fb.peran === 'Pustakawan'
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-blue-100 text-blue-700'
+                                }`}>
+                                  {fb.peran}
+                                </span>
+                                {fb.nim && fb.nim !== '-' && (
+                                  <span className="font-mono text-xs text-slate-400 font-semibold">
+                                    NIM/NIDN: {fb.nim}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
+                                <span>{fb.tanggal}</span>
+                                <span>•</span>
+                                <span className="text-[#047857] font-semibold">{fb.kategori}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center text-amber-400">
+                              {Array.from({ length: 5 }).map((_, i) => (
+                                <Star
+                                  key={i}
+                                  className={`w-4 h-4 ${
+                                    i < (fb.rating || 5)
+                                      ? 'fill-amber-400 text-amber-400'
+                                      : 'text-slate-200'
+                                  }`}
+                                />
+                              ))}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (window.confirm('Hapus komentar pemustaka ini?')) {
+                                  await deleteFeedbackItem(fb.id);
+                                }
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                              title="Hapus Komentar"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Isi Komentar */}
+                        <div className="pl-13 text-xs sm:text-sm text-slate-700 leading-relaxed bg-slate-50/70 p-3 rounded-xl border border-slate-100">
+                          "{fb.pesan}"
+                        </div>
+
+                        {/* Tanggapan Admin jika ada */}
+                        {fb.tanggapanAdmin && (
+                          <div className="ml-13 p-3 bg-emerald-50 border-l-2 border-[#047857] rounded-r-xl space-y-1">
+                            <div className="flex items-center gap-1.5 text-[#047857] font-bold text-xs">
+                              <ShieldCheck className="w-4 h-4" />
+                              <span>Tanggapan Resmi {fb.tanggapanAdmin.penjawab}:</span>
+                              <span className="text-slate-400 font-normal font-mono text-[10px]">({fb.tanggapanAdmin.tanggal})</span>
+                            </div>
+                            <p className="text-slate-700 text-xs italic">
+                              "{fb.tanggapanAdmin.pesan}"
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Tombol Balas Masukan */}
+                        <div className="pl-13 pt-1 flex items-center justify-end">
+                          <button
+                            type="button"
+                            onClick={() => setReplyingFeedbackId(replyingFeedbackId === fb.id ? null : fb.id)}
+                            className="text-xs text-[#047857] hover:underline font-bold flex items-center gap-1"
+                          >
+                            <CornerDownRight className="w-3.5 h-3.5" />
+                            <span>{replyingFeedbackId === fb.id ? 'Tutup Formulir Balasan' : 'Balas Tanggapan Resmi'}</span>
+                          </button>
+                        </div>
+
+                        {/* Inline Balas Form */}
+                        {replyingFeedbackId === fb.id && (
+                          <div className="ml-13 p-3 bg-slate-100 rounded-xl space-y-2 border border-slate-200">
+                            <label className="block text-[11px] font-bold text-slate-700">
+                              Tuliskan Tanggapan / Solusi Pustakawan:
+                            </label>
+                            <textarea
+                              rows="2"
+                              value={adminReplyText}
+                              onChange={(e) => setAdminReplyText(e.target.value)}
+                              placeholder="Contoh: Terima kasih atas sarannya. Usulan buku telah kami teruskan ke tim pengadaan..."
+                              className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-[#047857]"
+                            />
+                            <div className="flex justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setReplyingFeedbackId(null);
+                                  setAdminReplyText('');
+                                }}
+                                className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg text-xs"
+                              >
+                                Batal
+                              </button>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  if (!adminReplyText.trim()) return;
+                                  await replyFeedbackItem(fb.id, adminReplyText.trim(), currentUser?.nama || 'Pustakawan UIM');
+                                  setReplyingFeedbackId(null);
+                                  setAdminReplyText('');
+                                }}
+                                className="px-4 py-1.5 bg-[#047857] hover:bg-[#065f46] text-white font-bold rounded-lg text-xs shadow-xs"
+                              >
+                                Publikasikan Tanggapan
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                </div>
+              )}
             </div>
           )}
         </main>
@@ -4114,6 +5003,12 @@ export default function AdminDashboard({
           </div>
         </div>
       )}
+      {/* ================= MODAL PORTAL JURNAL & KURASI SIVITAS ================= */}
+      <JournalPortalModal
+        isOpen={isJournalPortalOpen}
+        onClose={() => setIsJournalPortalOpen(false)}
+        currentUser={currentUser}
+      />
     </div>
   );
 }

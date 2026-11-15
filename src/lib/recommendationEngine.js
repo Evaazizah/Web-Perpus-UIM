@@ -1,37 +1,34 @@
 /**
  * ==============================================================================
- * SISTEM REKOMENDASI: ITEM-BASED COLLABORATIVE FILTERING
+ * SISTEM REKOMENDASI: ITEM-BASED COLLABORATIVE FILTERING (IBCF)
+ * DENGAN PENGUKURAN KEMIRIPAN COSINE SIMILARITY
  * ==============================================================================
- * 
- * Konsep:
- * Rekomendasi didasarkan pada tingkat kemiripan (similarity) antar buku (items)
- * berdasarkan pola rating yang diberikan oleh seluruh pengguna.
- * 
- * Alur Kerja:
- * 1. Membangun Matriks Rating (User-Item Matrix).
- * 2. Menghitung Nilai Kemiripan Antar Buku (Cosine Similarity).
- * 3. Memprediksi Skor Buku yang belum pernah dibaca/dirating oleh target user.
- * 4. Mengurutkan dan mengembalikan Top-N buku dengan prediksi skor tertinggi.
- * 5. Menangani Kasus 'Cold Start' (pengguna baru yang belum memberi rating).
+ * Sesuai Dokumen Blueprint Bagian 3, 6.C & Arahan Bagian E:
+ * 1. Menghitung User-Item Matrix berdasarkan interaksi rating riil di Firestore.
+ * 2. Mengukur jarak kemiripan antar-koleksi menggunakan Cosine Similarity:
+ *                    sum(R_u,A * R_u,B)
+ *      sim(A, B) = ----------------------------------------
+ *                  sqrt(sum(R_u,A^2)) * sqrt(sum(R_u,B^2))
+ * 3. Memprediksi skor buku yang belum dinilai target user (Weighted Average):
+ *                  sum(sim(i, j) * R_u,j)
+ *      P_u,i = ------------------------------
+ *                    sum(|sim(i, j)|)
+ * 4. Fallback Cold-Start: Jika user baru belum memiliki rating, sajikan buku
+ *    dengan rata-rata rating dan frekuensi interaksi tertinggi.
+ * 5. Konsisten: ID buku dicocokkan sebagai string murni untuk mencegah konflik tipe data.
  */
 
 /**
  * Menghitung Cosine Similarity antara dua vektor rating buku (Item A dan Item B).
- * 
- * Rumus Cosine Similarity:
- *                sum(Rating_u,A * Rating_u,B)
- * sim(A, B) = ------------------------------------
- *             sqrt(sum(Rating_u,A^2)) * sqrt(sum(Rating_u,B^2))
- * 
- * @param {Object} ratingsA - Objek { userId: rating } untuk Buku A
- * @param {Object} ratingsB - Objek { userId: rating } untuk Buku B
- * @returns {number} Nilai kemiripan antara 0 (tidak mirip sama sekali) hingga 1 (sangat identik)
+ * @param {Object} ratingsA - Objek { userId: ratingValue }
+ * @param {Object} ratingsB - Objek { userId: ratingValue }
+ * @returns {number} Nilai kemiripan 0.0 s.d. 1.0
  */
 export function calculateCosineSimilarity(ratingsA, ratingsB) {
-  // Dapatkan irisan user yang memberi rating pada KEDUA buku A dan B
-  const commonUsers = Object.keys(ratingsA).filter((userId) => ratingsB[userId] !== undefined);
+  if (!ratingsA || !ratingsB) return 0;
 
-  // Jika tidak ada user yang sama-sama menilai kedua buku, kemiripan = 0
+  // Temukan irisan user yang menilai KEDUA buku A dan B
+  const commonUsers = Object.keys(ratingsA).filter((userId) => ratingsB[userId] !== undefined);
   if (commonUsers.length === 0) return 0;
 
   let dotProduct = 0;
@@ -39,8 +36,8 @@ export function calculateCosineSimilarity(ratingsA, ratingsB) {
   let normB = 0;
 
   for (const userId of commonUsers) {
-    const rA = ratingsA[userId];
-    const rB = ratingsB[userId];
+    const rA = Number(ratingsA[userId]);
+    const rB = Number(ratingsB[userId]);
     dotProduct += rA * rB;
     normA += rA * rA;
     normB += rB * rB;
@@ -54,26 +51,27 @@ export function calculateCosineSimilarity(ratingsA, ratingsB) {
 
 /**
  * Membangun matriks kemiripan untuk seluruh pasangan buku (Item-to-Item Similarity Matrix).
- * 
  * @param {Array} ratings - Array data rating [{ id_user, id_buku, nilai_rating }]
- * @returns {Object} Matrix kemiripan: { [bukuIdA]: { [bukuIdB]: similarityScore } }
+ * @returns {Object} { similarityMatrix, bookRatingsMap }
  */
 export function buildItemSimilarityMatrix(ratings) {
-  // 1. Kelompokkan rating per buku: { [id_buku]: { [id_user]: nilai_rating } }
   const bookRatingsMap = {};
 
+  // Kelompokkan rating per buku: { [id_buku]: { [id_user]: nilai_rating } }
   ratings.forEach(({ id_user, id_buku, nilai_rating }) => {
+    if (!id_buku || !id_user || nilai_rating === undefined) return;
     const bookId = String(id_buku);
+    const userId = String(id_user);
+
     if (!bookRatingsMap[bookId]) {
       bookRatingsMap[bookId] = {};
     }
-    bookRatingsMap[bookId][id_user] = Number(nilai_rating);
+    bookRatingsMap[bookId][userId] = Number(nilai_rating);
   });
 
   const bookIds = Object.keys(bookRatingsMap);
   const similarityMatrix = {};
 
-  // 2. Hitung kemiripan setiap pasangan buku (A dan B)
   for (let i = 0; i < bookIds.length; i++) {
     const idA = bookIds[i];
     if (!similarityMatrix[idA]) similarityMatrix[idA] = {};
@@ -82,9 +80,9 @@ export function buildItemSimilarityMatrix(ratings) {
       const idB = bookIds[j];
 
       if (idA === idB) {
-        similarityMatrix[idA][idB] = 1.0; // Buku identik dengan dirinya sendiri
+        similarityMatrix[idA][idB] = 1.0;
       } else if (similarityMatrix[idB] && similarityMatrix[idB][idA] !== undefined) {
-        // Matriks simetris: sim(A, B) = sim(B, A), hemat perhitungan
+        // Matriks simetris: sim(A, B) = sim(B, A)
         similarityMatrix[idA][idB] = similarityMatrix[idB][idA];
       } else {
         const sim = calculateCosineSimilarity(bookRatingsMap[idA], bookRatingsMap[idB]);
@@ -97,35 +95,39 @@ export function buildItemSimilarityMatrix(ratings) {
 }
 
 /**
- * Menghasilkan Rekomendasi Buku untuk User Tertentu (Target User).
- * 
- * @param {string|number} targetUserId - ID user yang sedang login
- * @param {Array} allBooks - Seluruh daftar buku dari database
- * @param {Array} allRatings - Seluruh data rating dari database
- * @param {number} topN - Jumlah rekomendasi yang ingin ditampilkan (default: 4)
+ * Menghasilkan Rekomendasi Buku untuk Pengguna Tertentu
+ * @param {string|null} targetUserId - UID user yang sedang login (null jika Guest)
+ * @param {Array} allBooks - Koleksi seluruh buku
+ * @param {Array} allRatings - Koleksi seluruh rating riil dari Firestore
+ * @param {number} topN - Jumlah rekomendasi yang diminta (default: 4)
  * @returns {Array} Daftar buku rekomendasi disertai skor prediksi dan alasan
  */
-export function getRecommendationsForUser(targetUserId, allBooks, allRatings, topN = 4) {
+export function getRecommendationsForUser(targetUserId, allBooks = [], allRatings = [], topN = 4) {
   if (!allBooks || allBooks.length === 0) return [];
-  if (!allRatings || allRatings.length === 0) {
-    // Fallback Cold Start: Ambil buku teratas jika belum ada rating sama sekali
-    return allBooks.slice(0, topN).map(b => ({ ...b, predictedScore: 5.0, reason: 'Buku Pilihan Populer' }));
+
+  // 1. KASUS PENGUNJUNG UMUM (GUEST / BELUM LOGIN)
+  // Sesuai Blueprint Bagian 4: Fitur rekomendasi menggunakan fallback "Koleksi Terpopuler"
+  if (!targetUserId) {
+    return getColdStartRecommendations(allBooks, allRatings, topN, 'Koleksi Populer Kampus (Masuk Akun untuk Personalisasi)');
   }
 
-  // 1. Ekstrak buku-buku yang telah diberi rating oleh target user
-  const userRatings = allRatings.filter((r) => String(r.id_user) === String(targetUserId));
+  const cleanUserId = String(targetUserId);
+
+  // 2. KASUS ANGGOTA TANPA RIWAYAT RATING (COLD-START BARU)
+  const userRatings = allRatings.filter((r) => String(r.id_user) === cleanUserId);
   const userRatedBookIds = new Set(userRatings.map((r) => String(r.id_buku)));
 
-  // Kasus COLD START (User baru yang belum pernah memberikan rating):
-  // Rekomendasikan buku dengan rata-rata rating tertinggi dari seluruh user
   if (userRatings.length === 0) {
-    return getColdStartRecommendations(allBooks, allRatings, topN);
+    return getColdStartRecommendations(
+      allBooks,
+      allRatings,
+      topN,
+      'Rekomendasi Awal Populer (Beri Rating Buku untuk Menyesuaikan Selera)'
+    );
   }
 
-  // 2. Bangun Matriks Kemiripan Antar Item
+  // 3. KALKULASI UTAMA: ITEM-BASED COLLABORATIVE FILTERING
   const { similarityMatrix } = buildItemSimilarityMatrix(allRatings);
-
-  // 3. Hitung prediksi rating untuk setiap buku yang BELUM pernah dinilai oleh user
   const unratedBooks = allBooks.filter((book) => !userRatedBookIds.has(String(book.id)));
   const predictions = [];
 
@@ -134,9 +136,8 @@ export function getRecommendationsForUser(targetUserId, allBooks, allRatings, to
     let weightedScoreSum = 0;
     let similaritySum = 0;
     let mostSimilarRatedBook = null;
-    let maxSim = -1;
+    let maxSim = 0;
 
-    // Bandingkan candidate book dengan buku-buku yang sudah dirating user
     for (const userRating of userRatings) {
       const ratedBookId = String(userRating.id_buku);
       const ratingValue = Number(userRating.nilai_rating);
@@ -149,34 +150,35 @@ export function getRecommendationsForUser(targetUserId, allBooks, allRatings, to
 
         if (sim > maxSim) {
           maxSim = sim;
-          mostSimilarRatedBook = allBooks.find(b => String(b.id) === ratedBookId);
+          mostSimilarRatedBook = allBooks.find((b) => String(b.id) === ratedBookId);
         }
       }
     }
 
-    // Hitung prediksi rating tertimbang (Weighted Average)
     if (similaritySum > 0) {
       const predictedScore = weightedScoreSum / similaritySum;
       predictions.push({
         ...candidateBook,
         predictedScore: Number(predictedScore.toFixed(2)),
         similarityScore: Number(maxSim.toFixed(2)),
-        reason: mostSimilarRatedBook 
-          ? `Mirip dengan buku "${mostSimilarRatedBook.judul}" yang pernah kamu sukai`
-          : 'Sesuai dengan selera bacamu'
+        isPersonalized: true,
+        reason: mostSimilarRatedBook
+          ? `Berdasarkan kesukaanmu pada "${mostSimilarRatedBook.judul}"`
+          : 'Sesuai dengan riwayat rating bacamu'
       });
     }
   }
 
-  // 4. Urutkan dari predicted score tertinggi
+  // Urutkan dari prediksi skor tertinggi
   predictions.sort((a, b) => b.predictedScore - a.predictedScore);
 
-  // Jika hasil prediksi kurang dari topN, lengkapi dengan buku populer
+  // Jika hasil prediksi masih kurang dari topN (misal karena matriks kemiripan sparse),
+  // lengkapi dengan koleksi buku berating tinggi yang belum pernah dibaca
   if (predictions.length < topN) {
     const existingIds = new Set(predictions.map((p) => String(p.id)));
-    const coldStartFillers = getColdStartRecommendations(allBooks, allRatings, topN)
+    const coldStartFillers = getColdStartRecommendations(allBooks, allRatings, topN, 'Pilihan Favorit Civitas')
       .filter((b) => !userRatedBookIds.has(String(b.id)) && !existingIds.has(String(b.id)));
-    
+
     return [...predictions, ...coldStartFillers].slice(0, topN);
   }
 
@@ -184,40 +186,46 @@ export function getRecommendationsForUser(targetUserId, allBooks, allRatings, to
 }
 
 /**
- * Strategi Fallback untuk Pengguna Baru (Cold Start):
- * Menghitung rata-rata rating untuk tiap buku dan mengurutkan buku terbaik.
+ * Rekomendasi Fallback (Cold-Start & Pengunjung Umum)
+ * Menghitung rata-rata rating dan frekuensi interaksi seluruh pembaca.
  */
-function getColdStartRecommendations(allBooks, allRatings, topN = 4) {
-  const bookStats = {};
+export function getColdStartRecommendations(allBooks = [], allRatings = [], topN = 4, customReason = null) {
+  if (!allBooks || allBooks.length === 0) return [];
 
+  const bookStats = {};
   allRatings.forEach(({ id_buku, nilai_rating }) => {
+    if (!id_buku) return;
     const bId = String(id_buku);
     if (!bookStats[bId]) {
       bookStats[bId] = { total: 0, count: 0 };
     }
-    bookStats[bId].total += Number(nilai_rating);
+    bookStats[bId].total += Number(nilai_rating || 0);
     bookStats[bId].count += 1;
   });
 
-  const scoredBooks = allBooks.map((book) => {
+  const scored = allBooks.map((book) => {
     const stat = bookStats[String(book.id)];
-    const avgScore = stat ? stat.total / stat.count : 4.0;
+    const avg = stat && stat.count > 0 ? stat.total / stat.count : 4.5;
+    const count = stat ? stat.count : 0;
     return {
       ...book,
-      predictedScore: Number(avgScore.toFixed(2)),
-      reason: stat ? `Pilihan Favorit Komunitas (⭐ ${avgScore.toFixed(1)})` : 'Buku Rekomendasi Populer'
+      predictedScore: Number(avg.toFixed(1)),
+      interactionCount: count,
+      isPersonalized: false,
+      reason: customReason || (count > 0 ? `Favorit Komunitas (${count} Ulasan Civitas)` : 'Koleksi Pilihan Pustakawan')
     };
   });
 
-  scoredBooks.sort((a, b) => b.predictedScore - a.predictedScore);
-  return scoredBooks.slice(0, topN);
+  // Urutkan dari rating dan jumlah interaksi tertinggi
+  scored.sort((a, b) => {
+    if (b.interactionCount !== a.interactionCount) {
+      return b.interactionCount - a.interactionCount;
+    }
+    return b.predictedScore - a.predictedScore;
+  });
+
+  return scored.slice(0, topN);
 }
 
-/**
- * Data Simulasi Rating (Digunakan ketika database lokal/Supabase belum terisi data)
- * Memetakan pola preferensi buku antarpembaca:
- * - User 101, 102 menyukai buku Sastra (Laskar Pelangi, Bumi Manusia)
- * - User 103, 104 menyukai buku Koding (Clean Code, Pragmatic Programmer)
- * - User 105 menyukai buku Self-Development (Filosofi Teras, Atomic Habits)
- */
+// Dihapus dependensi dummy: array kosong untuk backward compatibility
 export const DUMMY_RATINGS = [];

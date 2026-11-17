@@ -101,13 +101,18 @@ export async function syncMembersFromFirebase() {
     const firestoreMembers = [];
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
-      // Standarisasi field status / status_verifikasi
-      firestoreMembers.push({
-        id: docSnap.id,
-        uid: docSnap.id,
-        ...data,
-        status: data.status_verifikasi || data.status || 'pending'
-      });
+      // Hanya masukkan anggota sivitas (Mahasiswa & Dosen), lewati akun admin
+      if (data.role !== 'admin' && docSnap.id !== 'admin_uim_primary' && !data.email?.includes('admin@uim.ac.id')) {
+        firestoreMembers.push({
+          id: docSnap.id,
+          uid: docSnap.id,
+          ...data,
+          nim: data.nim || data.nidn || '-',
+          role: data.role || 'mahasiswa',
+          status: data.status_verifikasi || data.status || 'pending',
+          status_verifikasi: data.status_verifikasi || data.status || 'pending'
+        });
+      }
     });
 
     saveStoredMembers(firestoreMembers);
@@ -197,12 +202,17 @@ export function subscribeMembers(callback) {
       const live = [];
       snapshot.forEach((docSnap) => {
         const d = docSnap.data();
-        live.push({
-          id: docSnap.id,
-          uid: docSnap.id,
-          ...d,
-          status: d.status_verifikasi || d.status || 'pending'
-        });
+        if (d.role !== 'admin' && docSnap.id !== 'admin_uim_primary' && !d.email?.includes('admin@uim.ac.id')) {
+          live.push({
+            id: docSnap.id,
+            uid: docSnap.id,
+            ...d,
+            nim: d.nim || d.nidn || '-',
+            role: d.role || 'mahasiswa',
+            status: d.status_verifikasi || d.status || 'pending',
+            status_verifikasi: d.status_verifikasi || d.status || 'pending'
+          });
+        }
       });
       saveStoredMembers(live);
       callback(live);

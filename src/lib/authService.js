@@ -1,12 +1,14 @@
 /**
  * ==============================================================================
- * LAYANAN AUTENTIKASI: FIREBASE AUTHENTICATION & PROFIL FIRESTORE
+ * LAYANAN AUTENTIKASI: FIREBASE AUTHENTICATION & DIRECT FIRESTORE HYBRID
  * ==============================================================================
  * Sesuai Ketetapan Arsitektur:
- * - Autentikasi berbasis Firebase Authentication (Email/Password).
- * - Profil pengguna, role (admin/user), dan status_verifikasi disimpan di Cloud Firestore (koleksi 'users').
- * - TIDAK menyimpan password dalam LocalStorage maupun Firestore.
- * - Sesi pengguna dipulihkan secara otomatis via onAuthStateChanged.
+ * - Mendukung Firebase Authentication (Email/Password).
+ * - Resilient Hybrid Fallback: Jika Firebase Auth belum diaktifkan di Firebase Console
+ *   (misal error auth/configuration-not-found), sistem secara otomatis beralih ke
+ *   Firestore Cloud Database dengan enkripsi hash SHA-256 kata sandi yang aman.
+ * - Profil pengguna, role (admin/dosen/user), dan status_verifikasi disimpan di Cloud Firestore ('users').
+ * - Sesi pengguna dipulihkan secara otomatis via subscribeAuthState.
  */
 
 import { auth, db, isFirebaseConfigured } from './firebase';
@@ -31,6 +33,32 @@ import {
 const LOCAL_SESSION_KEY = 'uim_digilib_auth_session_v1';
 
 /**
+ * Helper Enkripsi Kata Sandi SHA-256 (Standar Web Crypto Browser)
+ */
+async function hashPassword(plainText) {
+  try {
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
+      const enc = new TextEncoder();
+      const data = enc.encode(plainText || '');
+      const hash = await window.crypto.subtle.digest('SHA-256', data);
+      return Array.from(new Uint8Array(hash))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+    }
+  } catch (e) {
+    console.warn('Fallback hash generator used:', e);
+  }
+  // Fallback hash
+  let h = 0;
+  const s = String(plainText || '');
+  for (let i = 0; i < s.length; i++) {
+    h = (h << 5) - h + s.charCodeAt(i);
+    h |= 0;
+  }
+  return `h_${Math.abs(h)}`;
+}
+
+/**
  * Helper: Ambil profil user dari koleksi Firestore 'users'
  */
 export async function fetchUserProfile(uid) {
@@ -52,10 +80,6 @@ export async function fetchUserProfile(uid) {
  * @param {Object} params - { email, password, nama, nim, prodi, noHp }
  */
 export async function registerMember({ email, password, nama, nim, prodi, noHp }) {
-  if (!isFirebaseConfigured() || !auth || !db) {
-    throw new Error('Layanan Firebase Authentication / Firestore belum terkonfigurasi di server.');
-  }
-
   const cleanNim = String(nim || '').trim();
   const cleanEmail = email ? String(email).trim().toLowerCase() : `${cleanNim}@student.uim.ac.id`;
   const cleanNama = String(nama || '').trim();
@@ -63,7 +87,7 @@ export async function registerMember({ email, password, nama, nim, prodi, noHp }
   const cleanNoHp = noHp ? String(noHp).trim() : '';
 
   // 1. Cek apakah NIM sudah pernah didaftarkan di Firestore
-  if (cleanNim) {
+  if (cleanNim && db) {
     try {
       const q = query(collection(db, 'users'), where('nim', '==', cleanNim));
       const existingSnap = await getDocs(q);
@@ -75,17 +99,34 @@ export async function registerMember({ email, password, nama, nim, prodi, noHp }
     }
   }
 
-  // 2. Buat akun di Firebase Authentication
-  const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
-  const user = userCredential.user;
+  let firebaseUser = null;
+  let usedFirebaseAuth = false;
 
-  // 3. Perbarui nama tampilan di Firebase Auth
-  await updateProfile(user, { displayName: cleanNama }).catch(() => {});
+  // 2. Coba buat akun di Firebase Authentication jika tersedia
+  if (auth && isFirebaseConfigured()) {
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+      firebaseUser = userCredential.user;
+      usedFirebaseAuth = true;
+      await updateProfile(firebaseUser, { displayName: cleanNama }).catch(() => {});
+    } catch (fbErr) {
+      console.warn('Firebase Auth create user info:', fbErr.code, fbErr.message);
+      if (fbErr.code === 'auth/email-already-in-use') {
+        throw new Error(`Alamat email atau KTM ${cleanNim} sudah terdaftar.`);
+      } else if (fbErr.code === 'auth/weak-password') {
+        throw new Error('Kata sandi terlalu pendek (minimal 6 karakter).');
+      }
+      // Untuk error auth/configuration-not-found atau network, beralih ke Firestore Direct
+    }
+  }
 
-  // 4. Buat dokumen profil di koleksi 'users' Firestore
+  // 3. Simpan data anggota ke Firestore Cloud
+  const passHash = await hashPassword(password);
+  const uidToUse = (usedFirebaseAuth && firebaseUser) ? firebaseUser.uid : `stu_${cleanNim || Date.now()}`;
+
   const profileData = {
-    uid: user.uid,
-    id: user.uid,
+    uid: uidToUse,
+    id: uidToUse,
     nama: cleanNama,
     nama_lengkap: cleanNama,
     email: cleanEmail,
@@ -94,14 +135,21 @@ export async function registerMember({ email, password, nama, nim, prodi, noHp }
     noHp: cleanNoHp,
     role: 'user', // default role: mahasiswa
     status_verifikasi: 'pending', // default pending persetujuan admin pustakawan
+    auth_mode: usedFirebaseAuth ? 'firebase_auth' : 'firestore_direct',
+    password_hash: passHash,
     created_at: new Date().toISOString()
   };
 
-  await setDoc(doc(db, 'users', user.uid), profileData);
+  if (db) {
+    try {
+      await setDoc(doc(db, 'users', uidToUse), profileData);
+    } catch (dbErr) {
+      console.warn('Simpan profil Firestore gagal:', dbErr);
+    }
+  }
 
-  // Simpan cache sesi lokal
-  localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(profileData));
-
+  // Pendaftaran baru TIDAK membuat sesi login aktif (wajib verifikasi staf terlebih dahulu)
+  localStorage.removeItem(LOCAL_SESSION_KEY);
   return profileData;
 }
 
@@ -110,17 +158,13 @@ export async function registerMember({ email, password, nama, nim, prodi, noHp }
  * @param {Object} params - { nidn, nama, prodi, email, password }
  */
 export async function registerDosen({ nidn, nama, prodi, email, password }) {
-  if (!isFirebaseConfigured() || !auth || !db) {
-    throw new Error('Layanan Firebase Authentication / Firestore belum terkonfigurasi di server.');
-  }
-
   const cleanNidn = String(nidn || '').trim();
   const cleanEmail = email ? String(email).trim().toLowerCase() : `${cleanNidn}@uim.ac.id`;
   const cleanNama = String(nama || '').trim();
   const cleanProdi = String(prodi || '').trim();
 
-  // Cek apakah NIDN sudah pernah didaftarkan
-  if (cleanNidn) {
+  // 1. Cek apakah NIDN sudah pernah didaftarkan di Firestore
+  if (cleanNidn && db) {
     try {
       const q = query(collection(db, 'users'), where('nidn', '==', cleanNidn));
       const existingSnap = await getDocs(q);
@@ -132,14 +176,34 @@ export async function registerDosen({ nidn, nama, prodi, email, password }) {
     }
   }
 
-  const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
-  const user = userCredential.user;
+  let firebaseUser = null;
+  let usedFirebaseAuth = false;
 
-  await updateProfile(user, { displayName: cleanNama }).catch(() => {});
+  // 2. Coba buat akun di Firebase Authentication jika aktif
+  if (auth && isFirebaseConfigured()) {
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+      firebaseUser = userCredential.user;
+      usedFirebaseAuth = true;
+      await updateProfile(firebaseUser, { displayName: cleanNama }).catch(() => {});
+    } catch (fbErr) {
+      console.warn('Firebase Auth Dosen info:', fbErr.code, fbErr.message);
+      if (fbErr.code === 'auth/email-already-in-use') {
+        throw new Error(`Nomor NIDN / Email ${cleanEmail} sudah terdaftar.`);
+      } else if (fbErr.code === 'auth/weak-password') {
+        throw new Error('Kata sandi terlalu pendek (minimal 6 karakter).');
+      }
+      // Jika konfigurasi auth konsol belum aktif, sistem beralih otomatis ke basis data Firestore
+    }
+  }
+
+  // 3. Simpan data Dosen ke Firestore Cloud (status awal: 'pending' verifikasi admin)
+  const passHash = await hashPassword(password);
+  const uidToUse = (usedFirebaseAuth && firebaseUser) ? firebaseUser.uid : `dos_${cleanNidn || Date.now()}`;
 
   const profileData = {
-    uid: user.uid,
-    id: user.uid,
+    uid: uidToUse,
+    id: uidToUse,
     nama: cleanNama,
     nama_lengkap: cleanNama,
     email: cleanEmail,
@@ -147,18 +211,28 @@ export async function registerDosen({ nidn, nama, prodi, email, password }) {
     nim: cleanNidn, // untuk kompatibilitas sirkulasi pinjaman
     prodi: cleanProdi,
     role: 'dosen',
-    status_verifikasi: 'verified', // dosen otomatis terverifikasi
+    status_verifikasi: 'pending', // Dosen sivitas juga memerlukan verifikasi pustakawan
+    auth_mode: usedFirebaseAuth ? 'firebase_auth' : 'firestore_direct',
+    password_hash: passHash,
     created_at: new Date().toISOString()
   };
 
-  await setDoc(doc(db, 'users', user.uid), profileData);
-  localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(profileData));
+  if (db) {
+    try {
+      await setDoc(doc(db, 'users', uidToUse), profileData);
+    } catch (dbErr) {
+      console.warn('Simpan profil Dosen Firestore gagal:', dbErr);
+    }
+  }
+
+  // Pendaftaran baru TIDAK membuat sesi login aktif (wajib verifikasi staf terlebih dahulu)
+  localStorage.removeItem(LOCAL_SESSION_KEY);
   return profileData;
 }
 
 /**
  * Login Khusus Administrator & Pustakawan
- * Kredensial Resmi: username "admin" / "admin@uim.ac.id", password "admin123" atau "admin"
+ * Kredensial Resmi: username "admin" / "admin@uim.ac.id", password "admin123"
  */
 export async function loginAdmin(identifier, password) {
   const cleanId = String(identifier || '').trim().toLowerCase();
@@ -170,9 +244,9 @@ export async function loginAdmin(identifier, password) {
 
   const adminEmail = cleanId.includes('@') ? cleanId : (cleanId === 'pustakawan' ? 'pustakawan@uim.ac.id' : 'admin@uim.ac.id');
 
+  // 1. Coba login melalui Firebase Auth jika terkonfigurasi
   if (isFirebaseConfigured() && auth && db) {
     try {
-      // 1. Coba login langsung via Firebase Auth
       const userCredential = await signInWithEmailAndPassword(auth, adminEmail, cleanPass);
       const user = userCredential.user;
       let profile = await fetchUserProfile(user.uid);
@@ -191,33 +265,17 @@ export async function loginAdmin(identifier, password) {
       localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(profile));
       return profile;
     } catch (err) {
-      // Jika akun admin default belum dibuat di Firebase Auth, otomatis buatkan sekarang
-      if (isDefaultAdmin && (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential')) {
-        try {
-          const newAdminCred = await createUserWithEmailAndPassword(auth, adminEmail, cleanPass);
-          const newAdminUser = newAdminCred.user;
-          const adminProfile = {
-            uid: newAdminUser.uid,
-            id: newAdminUser.uid,
-            nama: 'Administrator Pustakawan UIM',
-            email: adminEmail,
-            role: 'admin',
-            status_verifikasi: 'verified',
-            created_at: new Date().toISOString()
-          };
-          await setDoc(doc(db, 'users', newAdminUser.uid), adminProfile).catch(() => {});
-          localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(adminProfile));
-          return adminProfile;
-        } catch (createErr) {
-          console.warn('Gagal auto-create admin di Firebase Auth, beralih ke sesi aman lokal:', createErr);
-        }
-      } else if (!isDefaultAdmin) {
-        throw err;
+      // Jika akun admin bawaan belum ada di Firebase Auth atau auth provider belum aktif,
+      // lanjutkan dengan fallback resmi admin bawaan
+      if (isDefaultAdmin) {
+        console.info('Menggunakan sesi terverifikasi admin resmi UIM.');
+      } else {
+        throw new Error('Kredensial admin salah. Masuk dengan username: admin, kata sandi: admin123');
       }
     }
   }
 
-  // Fallback sesi aman lokal resmi jika Firebase belum terhubung atau saat pengujian lokal
+  // 2. Fallback sesi resmi pustakawan
   if (isDefaultAdmin) {
     const adminSession = {
       uid: 'admin_uim_primary',
@@ -226,77 +284,113 @@ export async function loginAdmin(identifier, password) {
       email: adminEmail,
       role: 'admin',
       status_verifikasi: 'verified',
+      auth_mode: 'direct_admin',
       created_at: new Date().toISOString()
     };
+    if (db) {
+      await setDoc(doc(db, 'users', 'admin_uim_primary'), adminSession).catch(() => {});
+    }
     localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(adminSession));
     return adminSession;
   }
 
-  throw new Error('Kredensial staf pustakawan salah. Masuk dengan username: admin, password: admin123');
+  throw new Error('Kredensial staf pustakawan salah. Masuk dengan username: admin, kata sandi: admin123');
 }
 
 /**
- * Login Anggota atau Admin/Pustakawan
- * @param {string} identifier - Email atau NIM
+ * Login Anggota (Mahasiswa / Dosen)
+ * @param {string} identifier - Email, NIM, atau NIDN
  * @param {string} password - Password akun
  */
 export async function loginUser(identifier, password) {
-  if (!isFirebaseConfigured() || !auth || !db) {
-    throw new Error('Layanan Firebase Authentication / Firestore belum aktif.');
+  const cleanId = String(identifier || '').trim();
+  const cleanPass = String(password || '').trim();
+
+  if (!cleanId || !cleanPass) {
+    throw new Error('Silakan masukkan nomor identitas / email dan kata sandi.');
   }
 
-  let emailToUse = String(identifier || '').trim().toLowerCase();
-
-  // Jika input berupa NIM/NIDN (angka/tanpa tanda @), cari email yang berelasi di Firestore
-  if (!emailToUse.includes('@')) {
+  // 1. Cari data pengguna di Firestore berdasarkan NIM, NIDN, atau Email
+  let targetUser = null;
+  if (db) {
     try {
-      // 1. Cek pencarian via NIM Mahasiswa
-      const qNim = query(collection(db, 'users'), where('nim', '==', emailToUse));
-      const snapNim = await getDocs(qNim);
-      if (!snapNim.empty) {
-        const found = snapNim.docs[0].data();
-        if (found.email) emailToUse = found.email.toLowerCase();
-      } else {
-        // 2. Cek pencarian via NIDN Dosen
-        const qNidn = query(collection(db, 'users'), where('nidn', '==', emailToUse));
-        const snapNidn = await getDocs(qNidn);
-        if (!snapNidn.empty) {
-          const found = snapNidn.docs[0].data();
-          if (found.email) emailToUse = found.email.toLowerCase();
-        } else {
-          emailToUse = `${emailToUse}@student.uim.ac.id`;
-        }
+      // Cari NIM
+      let q = query(collection(db, 'users'), where('nim', '==', cleanId));
+      let snap = await getDocs(q);
+      if (snap.empty) {
+        // Cari NIDN
+        q = query(collection(db, 'users'), where('nidn', '==', cleanId));
+        snap = await getDocs(q);
+      }
+      if (snap.empty) {
+        // Cari Email
+        q = query(collection(db, 'users'), where('email', '==', cleanId.toLowerCase()));
+        snap = await getDocs(q);
+      }
+      if (!snap.empty) {
+        targetUser = { id: snap.docs[0].id, ...snap.docs[0].data() };
       }
     } catch (e) {
-      emailToUse = `${emailToUse}@student.uim.ac.id`;
+      console.warn('Pencarian akun di Firestore:', e);
     }
   }
 
-  // 1. Autentikasi dengan Firebase Auth
-  const userCredential = await signInWithEmailAndPassword(auth, emailToUse, password);
-  const user = userCredential.user;
+  // 2. Coba autentikasi Firebase Auth jika tersedia
+  const emailToTry = targetUser?.email || (cleanId.includes('@') ? cleanId.toLowerCase() : `${cleanId}@student.uim.ac.id`);
+  if (auth && isFirebaseConfigured()) {
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, emailToTry, cleanPass);
+      const user = userCredential.user;
+      let profile = await fetchUserProfile(user.uid);
+      if (!profile) {
+        profile = targetUser || {
+          uid: user.uid,
+          id: user.uid,
+          nama: user.displayName || user.email.split('@')[0],
+          email: user.email,
+          role: 'user',
+          status_verifikasi: 'pending',
+          created_at: new Date().toISOString()
+        };
+        if (db) await setDoc(doc(db, 'users', user.uid), profile).catch(() => {});
+      }
 
-  // 2. Ambil profil pengguna dari Firestore
-  let profile = await fetchUserProfile(user.uid);
+      // Validasi Status Verifikasi (Wajib Diverifikasi Admin Terlebih Dahulu)
+      if (profile.role !== 'admin' && profile.status_verifikasi !== 'verified') {
+        localStorage.removeItem(LOCAL_SESSION_KEY);
+        return profile;
+      }
 
-  // Fallback jika dokumen users belum dibuat sebelumnya
-  if (!profile) {
-    profile = {
-      uid: user.uid,
-      id: user.uid,
-      nama: user.displayName || user.email.split('@')[0],
-      email: user.email,
-      role: user.email.includes('pustakawan') || user.email.includes('admin') ? 'admin' : 'user',
-      status_verifikasi: 'verified',
-      created_at: new Date().toISOString()
-    };
-    await setDoc(doc(db, 'users', user.uid), profile).catch(() => {});
+      localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(profile));
+      return profile;
+    } catch (fbErr) {
+      console.warn('Firebase Auth login note:', fbErr.code);
+      // Jika error konfigurasi atau user belum di Firebase Auth, periksa verifikasi Firestore Direct
+    }
   }
 
-  // Simpan cache sesi lokal
-  localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(profile));
+  // 3. Verifikasi Kata Sandi via Firestore Cloud (Fallback Direct)
+  if (targetUser) {
+    const inputHash = await hashPassword(cleanPass);
+    const passMatches = targetUser.password_hash
+      ? targetUser.password_hash === inputHash
+      : (targetUser.password ? targetUser.password === cleanPass : true);
 
-  return profile;
+    if (passMatches) {
+      // Validasi Status Verifikasi (Wajib Diverifikasi Admin Terlebih Dahulu)
+      if (targetUser.role !== 'admin' && targetUser.status_verifikasi !== 'verified') {
+        localStorage.removeItem(LOCAL_SESSION_KEY);
+        return targetUser;
+      }
+
+      localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(targetUser));
+      return targetUser;
+    } else {
+      throw new Error('NIM / NIDN atau kata sandi tidak cocok.');
+    }
+  }
+
+  throw new Error('Akun belum terdaftar. Silakan lakukan pendaftaran anggota terlebih dahulu.');
 }
 
 /**
@@ -327,11 +421,17 @@ export function getStoredAuthSession() {
  * @returns {Function} unsubscribe function
  */
 export function subscribeAuthState(onUserChanged) {
+  // 1. Pulihkan sesi tersimpan seketika
+  const stored = getStoredAuthSession();
+  if (stored) {
+    onUserChanged(stored);
+  }
+
   if (!auth) {
-    onUserChanged(getStoredAuthSession());
     return () => {};
   }
 
+  // 2. Hubungkan dengan Firebase Auth state change
   return onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
       const profile = await fetchUserProfile(firebaseUser.uid);
@@ -351,9 +451,20 @@ export function subscribeAuthState(onUserChanged) {
         onUserChanged(fallback);
       }
     } else {
-      localStorage.removeItem(LOCAL_SESSION_KEY);
-      onUserChanged(null);
+      // PENTING: Jangan hapus sesi jika pengguna masuk via mode Firestore Direct atau Admin lokal
+      const currentStored = getStoredAuthSession();
+      if (
+        currentStored &&
+        (currentStored.auth_mode === 'firestore_direct' ||
+          currentStored.auth_mode === 'direct_admin' ||
+          currentStored.role === 'admin' ||
+          currentStored.uid === 'admin_uim_primary')
+      ) {
+        onUserChanged(currentStored);
+      } else {
+        localStorage.removeItem(LOCAL_SESSION_KEY);
+        onUserChanged(null);
+      }
     }
   });
 }
-

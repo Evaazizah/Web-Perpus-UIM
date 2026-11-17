@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   getStoredMembers,
+  syncMembersFromFirebase,
   updateMemberStatus,
   countPendingVerifications
 } from '../lib/memberService';
@@ -14,6 +15,7 @@ import {
   Search,
   Filter,
   GraduationCap,
+  Award,
   Sparkles
 } from 'lucide-react';
 
@@ -23,9 +25,9 @@ export default function AdminVerificationModal({ isOpen, onClose, onMembersUpdat
   const [searchQuery, setSearchQuery] = useState('');
   const [actionSuccessMsg, setActionSuccessMsg] = useState('');
 
-  const loadData = () => {
-    const list = getStoredMembers();
-    setMembers(list);
+  const loadData = async () => {
+    const list = await syncMembersFromFirebase();
+    setMembers(list || getStoredMembers());
   };
 
   useEffect(() => {
@@ -44,7 +46,9 @@ export default function AdminVerificationModal({ isOpen, onClose, onMembersUpdat
       if (onMembersUpdated) onMembersUpdated();
 
       const label = newStatus === 'verified' ? 'disetujui & diaktifkan' : 'ditolak';
-      setActionSuccessMsg(`Akun mahasiswa ${updated.nama} (NIM: ${updated.nim}) berhasil ${label}!`);
+      const roleName = updated.role === 'dosen' ? 'Dosen' : 'Mahasiswa';
+      const idNum = updated.nidn || updated.nim;
+      setActionSuccessMsg(`Akun ${roleName} ${updated.nama} (${idNum}) berhasil ${label}!`);
       setTimeout(() => setActionSuccessMsg(''), 4000);
     } catch (e) {
       alert(e.message);
@@ -54,8 +58,9 @@ export default function AdminVerificationModal({ isOpen, onClose, onMembersUpdat
   const filtered = members.filter((m) => {
     const matchFilter = filterStatus === 'all' || m.status === filterStatus;
     const matchSearch =
-      m.nama.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      String(m.nim).includes(searchQuery) ||
+      m.nama?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(m.nim || '').includes(searchQuery) ||
+      String(m.nidn || '').includes(searchQuery) ||
       (m.prodi && m.prodi.toLowerCase().includes(searchQuery.toLowerCase()));
     return matchFilter && matchSearch;
   });

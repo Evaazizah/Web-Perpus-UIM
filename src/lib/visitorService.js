@@ -16,6 +16,8 @@ import {
   doc,
   setDoc,
   getDoc,
+  getDocs,
+  deleteDoc,
   addDoc,
   collection,
   onSnapshot,
@@ -26,14 +28,14 @@ const SESSION_KEY = 'uim_digilib_visitor_session_v2';
 const LAST_DATE_KEY = 'uim_digilib_last_visit_date_v2';
 const LOCAL_STATS_KEY = 'uim_digilib_visitor_stats_v2';
 
-// Baseline awal riil (dimulai dari 0 atau angka terverifikasi)
+// Baseline awal riil bersih tanpa data tiruan (dimulai dari 0)
 const BASE_STATS = {
   todayDate: new Date().toISOString().split('T')[0],
-  todayVisitors: 1,
-  todayHits: 1,
-  totalVisitors: 1,
-  totalHits: 1,
-  activeOnline: 1,
+  todayVisitors: 0,
+  todayHits: 0,
+  totalVisitors: 0,
+  totalHits: 0,
+  activeOnline: 0,
   activeSessions: {}
 };
 
@@ -213,4 +215,51 @@ export function subscribeVisitorStats(callback) {
   } catch (e) {
     return () => listeners.delete(callback);
   }
+}
+
+/**
+ * Reset Seluruh Hitungan Statistik Pengunjung (Mode Uji Coba Mandiri / Bersih dari Nol)
+ */
+export async function resetVisitorStats() {
+  const emptyStats = {
+    todayDate: new Date().toISOString().split('T')[0],
+    todayVisitors: 0,
+    todayHits: 0,
+    totalVisitors: 0,
+    totalHits: 0,
+    activeOnline: 0,
+    activeSessions: {}
+  };
+
+  localStorage.setItem(LOCAL_STATS_KEY, JSON.stringify(emptyStats));
+  localStorage.removeItem(LAST_DATE_KEY);
+  localStorage.removeItem(SESSION_KEY);
+  localStorage.setItem('uim_visitor_stats_v1', JSON.stringify(emptyStats));
+  localStorage.removeItem('uim_visitor_sessions_v1');
+
+  listeners.forEach((fn) => {
+    try {
+      fn(emptyStats);
+    } catch (err) {}
+  });
+
+  if (isFirebaseConfigured() && db) {
+    try {
+      const summaryDocRef = doc(db, 'visitor_stats', 'summary');
+      await setDoc(summaryDocRef, emptyStats);
+    } catch (e) {
+      console.warn('Gagal reset visitor_stats di Firestore:', e);
+    }
+
+    try {
+      const logsSnap = await getDocs(collection(db, 'visitor_logs'));
+      for (const d of logsSnap.docs) {
+        await deleteDoc(doc(db, 'visitor_logs', d.id)).catch(() => {});
+      }
+    } catch (e) {
+      console.warn('Gagal membersihkan visitor_logs di Firestore:', e);
+    }
+  }
+
+  return emptyStats;
 }

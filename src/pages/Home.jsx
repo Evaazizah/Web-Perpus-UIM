@@ -743,6 +743,10 @@ export default function Home({
           </div>
         </section>
 
+        {/* ================= 8. STATISTIK PENGUNJUNG PORTAL (PRE-FOOTER) ================= */}
+        <section className="mt-12 sm:mt-16">
+          <VisitorCounterWidget variant="banner" currentUser={currentUser} />
+        </section>
 
       </div>
 

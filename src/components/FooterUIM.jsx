@@ -93,11 +93,6 @@ export default function FooterUIM() {
 
         </div>
 
-        {/* Real-time Visitor Counter Widget */}
-        <div className="py-6 border-b border-emerald-800/60">
-          <VisitorCounterWidget variant="footer" />
-        </div>
-
         {/* Bottom Bar: Thesis IBCF Research Indicator */}
         <div className="pt-5 flex flex-col sm:flex-row items-center justify-between text-[11px] text-emerald-200/70 gap-2">
           <p>{t('footer_thesis_desc')}</p>

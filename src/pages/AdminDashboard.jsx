@@ -176,6 +176,15 @@ export default function AdminDashboard({
       setMembers([]);
       setLoans([]);
       setAdminFeedbacks([]);
+      setVisitorStats({
+        todayDate: new Date().toISOString().split('T')[0],
+        todayVisitors: 0,
+        todayHits: 0,
+        totalVisitors: 0,
+        totalHits: 0,
+        activeOnline: 0,
+        activeSessions: {}
+      });
       setSystemAlertMessage('Seluruh basis data perpustakaan telah berhasil dikosongkan untuk pengujian mandiri.');
       alert('Basis data perpustakaan telah berhasil dikosongkan secara menyeluruh!');
     } catch (err) {
@@ -2260,8 +2269,9 @@ export default function AdminDashboard({
                   <table className="w-full text-left text-xs">
                     <thead className="bg-[#f8fafc] text-slate-700 border-b font-bold uppercase text-[11px]">
                       <tr>
-                        <th className="py-2.5 px-3">Nomor KTM / NIM</th>
-                        <th className="py-2.5 px-3">Nama Mahasiswa</th>
+                        <th className="py-2.5 px-3">Nomor KTM / NIDN</th>
+                        <th className="py-2.5 px-3">Nama Pemustaka</th>
+                        <th className="py-2.5 px-3">Kategori</th>
                         <th className="py-2.5 px-3">Program Studi</th>
                         <th className="py-2.5 px-3">Email</th>
                         <th className="py-2.5 px-3">Status Akun</th>
@@ -2272,8 +2282,15 @@ export default function AdminDashboard({
                       {members.filter(m => memberSubTab === 'semua' || (memberSubTab === 'pending' && m.status === 'pending') || (memberSubTab === 'verified' && m.status === 'verified')).length > 0 ? (
                         members.filter(m => memberSubTab === 'semua' || (memberSubTab === 'pending' && m.status === 'pending') || (memberSubTab === 'verified' && m.status === 'verified')).map((m) => (
                           <tr key={m.id} className="hover:bg-slate-50">
-                            <td className="py-3 px-3 font-mono font-bold text-slate-900">{m.nim}</td>
-                            <td className="py-3 px-3 font-medium text-slate-800">{m.nama}</td>
+                            <td className="py-3 px-3 font-mono font-bold text-slate-900">{m.nim || m.nidn}</td>
+                            <td className="py-3 px-3 font-medium text-slate-800">{m.nama || m.nama_lengkap}</td>
+                            <td className="py-3 px-3">
+                              {m.role === 'dosen' ? (
+                                <span className="bg-purple-100 text-purple-800 px-2 py-0.5 rounded font-bold text-[10px]">👨‍🏫 Dosen UIM</span>
+                              ) : (
+                                <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold text-[10px]">🎓 Mahasiswa</span>
+                              )}
+                            </td>
                             <td className="py-3 px-3 text-slate-600">{m.prodi}</td>
                             <td className="py-3 px-3 text-slate-500">{m.email}</td>
                             <td className="py-3 px-3">
@@ -2286,7 +2303,7 @@ export default function AdminDashboard({
                             <td className="py-3 px-3 text-right">
                               {m.status === 'pending' ? (
                                 <div className="flex items-center justify-end gap-1.5">
-                                  <button onClick={() => handleVerifyMember(m.id, 'verified')} className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-xs">Setujui</button>
+                                  <button onClick={() => handleVerifyMember(m.id, 'verified')} className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-xs shadow-xs">Setujui</button>
                                   <button onClick={() => handleVerifyMember(m.id, 'rejected')} className="px-2.5 py-1 bg-slate-100 hover:bg-red-50 text-slate-600 text-xs rounded border">Tolak</button>
                                 </div>
                               ) : (
@@ -2297,10 +2314,10 @@ export default function AdminDashboard({
                         ))
                       ) : (
                         <tr>
-                          <td colSpan="6" className="py-12 text-center text-slate-400 bg-slate-50/50">
+                          <td colSpan="7" className="py-12 text-center text-slate-400 bg-slate-50/50">
                             <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                             <p className="font-semibold text-slate-700">Belum ada anggota terdaftar pada filter ini.</p>
-                            <p className="text-slate-400 mt-1">Data mahasiswa akan muncul otomatis saat mahasiswa mendaftar via KTM di menu Area Anggota.</p>
+                            <p className="text-slate-400 mt-1">Data pemustaka akan muncul otomatis saat Mahasiswa atau Dosen mendaftar di menu Area Anggota.</p>
                           </td>
                         </tr>
                       )}

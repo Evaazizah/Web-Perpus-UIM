@@ -344,11 +344,11 @@ export default function NotificationModal({
                   <span>Ketentuan Sirkulasi & Tata Tertib</span>
                 </h4>
                 <ul className="space-y-1.5 text-slate-600 pl-4 list-disc text-[11px]">
-                  <li>Membawa Kartu Tanda Mahasiswa (KTM) atau NIDN Dosen saat berkunjung.</li>
-                  <li>Maksimal peminjaman mandiri <strong>3 eksemplar buku</strong> selama <strong>7 hari kalender</strong>.</li>
-                  <li>Perpanjangan masa pinjam dapat dilakukan 1x secara online sebelum jatuh tempo.</li>
-                  <li>Denda keterlambatan pengembalian koleksi adalah <strong>Rp 1.000 / hari / buku</strong>.</li>
-                  <li>Menjaga ketenangan, kebersihan, dan kerapian koleksi di ruang baca perpustakaan.</li>
+                  <li>Kartu anggota berlaku 4 tahun bagi mahasiswa, dosen, dan pegawai UIM.</li>
+                  <li>Peminjaman dan perpanjangan buku wajib membawa kartu KTA Perpustakaan ke loket sirkulasi.</li>
+                  <li>Jumlah buku yang dipinjam maksimal <strong>2 buku</strong>.</li>
+                  <li>Denda keterlambatan pengembalian buku adalah <strong>Rp 500,- per hari per eksemplar</strong>.</li>
+                  <li>Dilarang membawa tas, helm, makanan & minuman ke ruang baca serta menjaga ketenangan.</li>
                 </ul>
               </div>
 

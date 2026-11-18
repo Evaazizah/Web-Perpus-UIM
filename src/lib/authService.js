@@ -12,6 +12,7 @@
  */
 
 import { auth, db, isFirebaseConfigured } from './firebase';
+import { recordNewRegistration } from './memberService';
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -109,6 +110,9 @@ export async function registerMember({ email, password, nama, nim, prodi, noHp }
       firebaseUser = userCredential.user;
       usedFirebaseAuth = true;
       await updateProfile(firebaseUser, { displayName: cleanNama }).catch(() => {});
+      // PENTING: createUserWithEmailAndPassword otomatis men-sign-in akun!
+      // Karena status akun adalah 'pending' verifikasi admin, sign out seketika agar tidak auto-login.
+      await firebaseSignOut(auth).catch(() => {});
     } catch (fbErr) {
       console.warn('Firebase Auth create user info:', fbErr.code, fbErr.message);
       if (fbErr.code === 'auth/email-already-in-use') {
@@ -135,6 +139,7 @@ export async function registerMember({ email, password, nama, nim, prodi, noHp }
     noHp: cleanNoHp,
     role: 'user', // default role: mahasiswa
     status_verifikasi: 'pending', // default pending persetujuan admin pustakawan
+    status: 'pending',
     auth_mode: usedFirebaseAuth ? 'firebase_auth' : 'firestore_direct',
     password_hash: passHash,
     created_at: new Date().toISOString()
@@ -148,7 +153,8 @@ export async function registerMember({ email, password, nama, nim, prodi, noHp }
     }
   }
 
-  // Pendaftaran baru TIDAK membuat sesi login aktif (wajib verifikasi staf terlebih dahulu)
+  // Catat pendaftaran ke antrean verifikasi lokal admin (jangan simpan sesi login aktif!)
+  recordNewRegistration(profileData);
   localStorage.removeItem(LOCAL_SESSION_KEY);
   return profileData;
 }
@@ -186,6 +192,8 @@ export async function registerDosen({ nidn, nama, prodi, email, password }) {
       firebaseUser = userCredential.user;
       usedFirebaseAuth = true;
       await updateProfile(firebaseUser, { displayName: cleanNama }).catch(() => {});
+      // PENTING: Sign out seketika agar akun dosen yang baru mendaftar tidak otomatis login sebelum diverifikasi
+      await firebaseSignOut(auth).catch(() => {});
     } catch (fbErr) {
       console.warn('Firebase Auth Dosen info:', fbErr.code, fbErr.message);
       if (fbErr.code === 'auth/email-already-in-use') {
@@ -197,7 +205,7 @@ export async function registerDosen({ nidn, nama, prodi, email, password }) {
     }
   }
 
-  // 3. Simpan data Dosen ke Firestore Cloud (status awal: 'pending' verifikasi admin)
+  // 3. Simpan data Dosen ke Firestore Cloud
   const passHash = await hashPassword(password);
   const uidToUse = (usedFirebaseAuth && firebaseUser) ? firebaseUser.uid : `dos_${cleanNidn || Date.now()}`;
 
@@ -211,7 +219,8 @@ export async function registerDosen({ nidn, nama, prodi, email, password }) {
     nim: cleanNidn, // untuk kompatibilitas sirkulasi pinjaman
     prodi: cleanProdi,
     role: 'dosen',
-    status_verifikasi: 'pending', // Dosen sivitas juga memerlukan verifikasi pustakawan
+    status_verifikasi: 'pending', // Butuh verifikasi admin pustakawan UIM
+    status: 'pending',
     auth_mode: usedFirebaseAuth ? 'firebase_auth' : 'firestore_direct',
     password_hash: passHash,
     created_at: new Date().toISOString()
@@ -225,7 +234,8 @@ export async function registerDosen({ nidn, nama, prodi, email, password }) {
     }
   }
 
-  // Pendaftaran baru TIDAK membuat sesi login aktif (wajib verifikasi staf terlebih dahulu)
+  // Catat ke antrean keanggotaan admin (jangan simpan sesi login aktif!)
+  recordNewRegistration(profileData);
   localStorage.removeItem(LOCAL_SESSION_KEY);
   return profileData;
 }
@@ -350,20 +360,33 @@ export async function loginUser(identifier, password) {
           email: user.email,
           role: 'user',
           status_verifikasi: 'pending',
+          status: 'pending',
           created_at: new Date().toISOString()
         };
         if (db) await setDoc(doc(db, 'users', user.uid), profile).catch(() => {});
       }
 
-      // Validasi Status Verifikasi (Wajib Diverifikasi Admin Terlebih Dahulu)
-      if (profile.role !== 'admin' && profile.status_verifikasi !== 'verified') {
-        localStorage.removeItem(LOCAL_SESSION_KEY);
-        return profile;
+      // Validasi Status Verifikasi Anggota (Mahasiswa & Dosen)
+      if (profile.role !== 'admin') {
+        const statusVerif = profile.status_verifikasi || profile.status || 'pending';
+        if (statusVerif === 'pending') {
+          await firebaseSignOut(auth).catch(() => {});
+          localStorage.removeItem(LOCAL_SESSION_KEY);
+          return { ...profile, status_verifikasi: 'pending', status: 'pending' };
+        }
+        if (statusVerif === 'rejected') {
+          await firebaseSignOut(auth).catch(() => {});
+          localStorage.removeItem(LOCAL_SESSION_KEY);
+          throw new Error('Pendaftaran akun Anda telah ditolak oleh admin pustakawan. Silakan hubungi meja sirkulasi perpustakaan.');
+        }
       }
 
       localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(profile));
       return profile;
     } catch (fbErr) {
+      if (fbErr.message && (fbErr.message.includes('ditolak') || fbErr.message.includes('menunggu verifikasi'))) {
+        throw fbErr;
+      }
       console.warn('Firebase Auth login note:', fbErr.code);
       // Jika error konfigurasi atau user belum di Firebase Auth, periksa verifikasi Firestore Direct
     }
@@ -377,10 +400,17 @@ export async function loginUser(identifier, password) {
       : (targetUser.password ? targetUser.password === cleanPass : true);
 
     if (passMatches) {
-      // Validasi Status Verifikasi (Wajib Diverifikasi Admin Terlebih Dahulu)
-      if (targetUser.role !== 'admin' && targetUser.status_verifikasi !== 'verified') {
-        localStorage.removeItem(LOCAL_SESSION_KEY);
-        return targetUser;
+      // Validasi Status Verifikasi Anggota (Mahasiswa & Dosen)
+      if (targetUser.role !== 'admin') {
+        const statusVerif = targetUser.status_verifikasi || targetUser.status || 'pending';
+        if (statusVerif === 'pending') {
+          localStorage.removeItem(LOCAL_SESSION_KEY);
+          return { ...targetUser, status_verifikasi: 'pending', status: 'pending' };
+        }
+        if (statusVerif === 'rejected') {
+          localStorage.removeItem(LOCAL_SESSION_KEY);
+          throw new Error('Pendaftaran akun Anda telah ditolak oleh admin pustakawan. Silakan hubungi meja sirkulasi perpustakaan.');
+        }
       }
 
       localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(targetUser));
@@ -421,10 +451,16 @@ export function getStoredAuthSession() {
  * @returns {Function} unsubscribe function
  */
 export function subscribeAuthState(onUserChanged) {
-  // 1. Pulihkan sesi tersimpan seketika
+  // 1. Pulihkan sesi tersimpan seketika (hanya jika akun terverifikasi atau admin)
   const stored = getStoredAuthSession();
   if (stored) {
-    onUserChanged(stored);
+    const isVerified = stored.role === 'admin' || (stored.status_verifikasi || stored.status) === 'verified';
+    if (isVerified) {
+      onUserChanged(stored);
+    } else {
+      localStorage.removeItem(LOCAL_SESSION_KEY);
+      onUserChanged(null);
+    }
   }
 
   if (!auth) {
@@ -436,19 +472,20 @@ export function subscribeAuthState(onUserChanged) {
     if (firebaseUser) {
       const profile = await fetchUserProfile(firebaseUser.uid);
       if (profile) {
-        localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(profile));
-        onUserChanged(profile);
+        const isVerified = profile.role === 'admin' || (profile.status_verifikasi || profile.status) === 'verified';
+        if (isVerified) {
+          localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(profile));
+          onUserChanged(profile);
+        } else {
+          // Akun berstatus pending verifikasi atau rejected: cegah login otomatis
+          localStorage.removeItem(LOCAL_SESSION_KEY);
+          await firebaseSignOut(auth).catch(() => {});
+          onUserChanged(null);
+        }
       } else {
-        const fallback = {
-          uid: firebaseUser.uid,
-          id: firebaseUser.uid,
-          nama: firebaseUser.displayName || firebaseUser.email,
-          email: firebaseUser.email,
-          role: 'user',
-          status_verifikasi: 'verified'
-        };
-        localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(fallback));
-        onUserChanged(fallback);
+        localStorage.removeItem(LOCAL_SESSION_KEY);
+        await firebaseSignOut(auth).catch(() => {});
+        onUserChanged(null);
       }
     } else {
       // PENTING: Jangan hapus sesi jika pengguna masuk via mode Firestore Direct atau Admin lokal
@@ -458,7 +495,8 @@ export function subscribeAuthState(onUserChanged) {
         (currentStored.auth_mode === 'firestore_direct' ||
           currentStored.auth_mode === 'direct_admin' ||
           currentStored.role === 'admin' ||
-          currentStored.uid === 'admin_uim_primary')
+          currentStored.uid === 'admin_uim_primary') &&
+        (currentStored.role === 'admin' || (currentStored.status_verifikasi || currentStored.status) === 'verified')
       ) {
         onUserChanged(currentStored);
       } else {

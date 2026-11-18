@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   getStoredMembers,
-  syncMembersFromFirebase,
   updateMemberStatus,
   countPendingVerifications
 } from '../lib/memberService';
@@ -15,8 +14,8 @@ import {
   Search,
   Filter,
   GraduationCap,
-  Award,
-  Sparkles
+  Sparkles,
+  Award
 } from 'lucide-react';
 
 export default function AdminVerificationModal({ isOpen, onClose, onMembersUpdated }) {
@@ -25,9 +24,9 @@ export default function AdminVerificationModal({ isOpen, onClose, onMembersUpdat
   const [searchQuery, setSearchQuery] = useState('');
   const [actionSuccessMsg, setActionSuccessMsg] = useState('');
 
-  const loadData = async () => {
-    const list = await syncMembersFromFirebase();
-    setMembers(list || getStoredMembers());
+  const loadData = () => {
+    const list = getStoredMembers();
+    setMembers(list);
   };
 
   useEffect(() => {
@@ -45,10 +44,11 @@ export default function AdminVerificationModal({ isOpen, onClose, onMembersUpdat
       loadData();
       if (onMembersUpdated) onMembersUpdated();
 
+      const isDosen = updated.role === 'dosen';
+      const roleText = isDosen ? 'dosen' : 'mahasiswa';
+      const idText = isDosen ? `NIDN: ${updated.nidn || updated.nim}` : `NIM: ${updated.nim}`;
       const label = newStatus === 'verified' ? 'disetujui & diaktifkan' : 'ditolak';
-      const roleName = updated.role === 'dosen' ? 'Dosen' : 'Mahasiswa';
-      const idNum = updated.nidn || updated.nim;
-      setActionSuccessMsg(`Akun ${roleName} ${updated.nama} (${idNum}) berhasil ${label}!`);
+      setActionSuccessMsg(`Akun ${roleText} ${updated.nama} (${idText}) berhasil ${label}!`);
       setTimeout(() => setActionSuccessMsg(''), 4000);
     } catch (e) {
       alert(e.message);
@@ -58,9 +58,9 @@ export default function AdminVerificationModal({ isOpen, onClose, onMembersUpdat
   const filtered = members.filter((m) => {
     const matchFilter = filterStatus === 'all' || m.status === filterStatus;
     const matchSearch =
-      m.nama?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      String(m.nim || '').includes(searchQuery) ||
-      String(m.nidn || '').includes(searchQuery) ||
+      (m.nama && m.nama.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (m.nim && String(m.nim).includes(searchQuery)) ||
+      (m.nidn && String(m.nidn).includes(searchQuery)) ||
       (m.prodi && m.prodi.toLowerCase().includes(searchQuery.toLowerCase()));
     return matchFilter && matchSearch;
   });
@@ -78,7 +78,7 @@ export default function AdminVerificationModal({ isOpen, onClose, onMembersUpdat
             </div>
             <div>
               <h2 className="text-lg sm:text-xl font-bold tracking-tight">
-                Panel Verifikasi Anggota Baru (KTM Mahasiswa)
+                Panel Verifikasi Anggota Baru (Mahasiswa & Dosen Sivitas)
               </h2>
               <p className="text-xs text-emerald-200 mt-0.5">
                 Persetujuan keanggotaan pemustaka Perpustakaan Universitas Islam Madura
@@ -103,7 +103,7 @@ export default function AdminVerificationModal({ isOpen, onClose, onMembersUpdat
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari berdasarkan NIM, Nama, atau Program Studi..."
+              placeholder="Cari berdasarkan NIM, NIDN, Nama, atau Program Studi..."
               className="w-full pl-9 pr-4 py-2 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:border-[#047857]"
             />
           </div>
@@ -172,10 +172,16 @@ export default function AdminVerificationModal({ isOpen, onClose, onMembersUpdat
                       : 'border-slate-200 hover:shadow'
                   }`}
                 >
-                  {/* Info Mahasiswa */}
+                  {/* Info Anggota (Mahasiswa / Dosen) */}
                   <div className="flex items-start gap-3.5">
-                    <div className="w-12 h-12 rounded-xl bg-emerald-100 text-[#047857] flex items-center justify-center font-bold text-lg shrink-0 border border-emerald-200">
-                      <GraduationCap className="w-6 h-6" />
+                    <div
+                      className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg shrink-0 border ${
+                        m.role === 'dosen'
+                          ? 'bg-purple-100 text-purple-800 border-purple-200'
+                          : 'bg-emerald-100 text-[#047857] border-emerald-200'
+                      }`}
+                    >
+                      {m.role === 'dosen' ? <Award className="w-6 h-6" /> : <GraduationCap className="w-6 h-6" />}
                     </div>
 
                     <div>
@@ -183,6 +189,17 @@ export default function AdminVerificationModal({ isOpen, onClose, onMembersUpdat
                         <h4 className="font-extrabold text-slate-900 text-sm sm:text-base">
                           {m.nama}
                         </h4>
+
+                        {/* Role Badge */}
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                            m.role === 'dosen'
+                              ? 'bg-purple-100 text-purple-800 border-purple-200'
+                              : 'bg-blue-100 text-blue-800 border-blue-200'
+                          }`}
+                        >
+                          {m.role === 'dosen' ? 'Dosen Sivitas' : 'Mahasiswa'}
+                        </span>
 
                         {/* Status Badge */}
                         {isPending && (
@@ -205,12 +222,14 @@ export default function AdminVerificationModal({ isOpen, onClose, onMembersUpdat
                         )}
                       </div>
 
-                      {/* Detail Data Mahasiswa */}
+                      {/* Detail Data Anggota */}
                       <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-slate-600">
                         <p>
-                          <span className="font-semibold text-slate-500">Nomor KTM / NIM:</span>{' '}
+                          <span className="font-semibold text-slate-500">
+                            {m.role === 'dosen' ? 'Nomor NIDN / NIP:' : 'Nomor KTM / NIM:'}
+                          </span>{' '}
                           <span className="font-mono font-bold text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded">
-                            {m.nim}
+                            {m.nidn || m.nim || '-'}
                           </span>
                         </p>
                         <p>

@@ -270,7 +270,7 @@ export default function UserProfile({
                   <Clock className="w-5 h-5 text-emerald-700" />
                   <span>Pinjaman Buku Sedang Berjalan</span>
                 </h2>
-                <span className="text-xs text-slate-500">Maksimal 3 eksemplar</span>
+                <span className="text-xs text-slate-500">Maksimal 2 buku</span>
               </div>
 
               {activeLoans.length === 0 ? (
@@ -323,7 +323,7 @@ export default function UserProfile({
                               {isOverdue ? (
                                 <span className="inline-flex items-center gap-1 text-[11px] font-bold text-red-700">
                                   <AlertCircle className="w-3.5 h-3.5" />
-                                  Terlambat {diffDays} hari • Estimasi Denda: Rp {(diffDays * 1000).toLocaleString('id-ID')}
+                                  Terlambat {diffDays} hari • Estimasi Denda: Rp {(diffDays * 500).toLocaleString('id-ID')}
                                 </span>
                               ) : (
                                 <span className="text-[11px] text-emerald-700 font-medium">

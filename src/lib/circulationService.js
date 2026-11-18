@@ -156,7 +156,7 @@ export async function returnLoan(loanId) {
     if (returnDate > dueDate) {
       const diffTime = Math.abs(returnDate - dueDate);
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      denda = diffDays * 1000; // Tarif denda: Rp 1.000 / hari
+      denda = diffDays * 500; // Tarif denda resmi Perpustakaan UIM: Rp 500 / hari / eksemplar
     }
 
     const updated = {

@@ -52,6 +52,7 @@ import {
   replyFeedbackItem
 } from '../lib/feedbackService';
 import JournalPortalModal from '../components/JournalPortalModal';
+import InteractiveParticleMesh from '../components/InteractiveParticleMesh';
 import {
   Menu,
   BookOpen,
@@ -105,6 +106,8 @@ import {
   AlertCircle,
   QrCode,
   Activity,
+  ScanLine,
+  Bot,
   MessageSquare,
   Star,
   CornerDownRight
@@ -258,6 +261,17 @@ export default function AdminDashboard({
   const [searchBookField, setSearchBookField] = useState('Semua Ruas');
   const [isBookFormOpen, setIsBookFormOpen] = useState(false);
   const [editingBook, setEditingBook] = useState(null);
+
+  // Handler tombol yang disediakan untuk integrasi sistem rekan tim kelompok:
+  const handleOcrClick = () => {
+    // Tombol ini disediakan untuk mengeksekusi sistem OCR dari rekan tim
+    alert('Tombol Scan OCR: Siap dihubungkan dengan kode sistem OCR dari rekan tim pengembang.');
+  };
+
+  const handleCrawlerClick = () => {
+    // Tombol ini disediakan untuk mengeksekusi sistem Web Crawling dari rekan tim
+    alert('Tombol Web Crawling: Siap dihubungkan dengan kode sistem Web Crawling dari rekan tim pengembang.');
+  };
   const [bookFormData, setBookFormData] = useState({
     judul: '',
     penulis: '',
@@ -997,16 +1011,43 @@ export default function AdminDashboard({
         {/* 2. SIDEBAR BIBLIOGRAFI */}
         {activeNavTab === 'Bibliografi' && (
           <div className="space-y-3">
-            <button
-              onClick={() => handleSubClick(() => {
-                setEditingBook(null);
-                setIsBookFormOpen(true);
-              })}
-              className="w-full py-2.5 px-3 bg-black/25 hover:bg-black/35 text-white font-bold rounded-lg text-left flex items-center gap-2 shadow border border-white/20"
-            >
-              <Plus className="w-4 h-4 text-amber-300" />
-              <span>Tambah Bibliografi Baru</span>
-            </button>
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-bold text-sky-200 uppercase px-1 tracking-wider block">
+                Entri Koleksi (3 Metode)
+              </span>
+
+              {/* 1. Tambah Manual */}
+              <button
+                onClick={() => handleSubClick(() => {
+                  setEditingBook(null);
+                  setIsBookFormOpen(true);
+                })}
+                className="w-full py-2 px-2.5 bg-black/25 hover:bg-black/35 text-white font-semibold rounded-lg text-left flex items-center gap-2 shadow-xs border border-white/20 text-xs transition-all"
+              >
+                <Plus className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                <span>1. Tambah Manual</span>
+              </button>
+
+              {/* 2. Scan Sampul OCR */}
+              <button
+                type="button"
+                onClick={() => handleSubClick(handleOcrClick)}
+                className="w-full py-2 px-2.5 bg-emerald-800/60 hover:bg-emerald-800/80 text-white font-semibold rounded-lg text-left flex items-center gap-2 shadow-xs border border-emerald-400/30 text-xs transition-all"
+              >
+                <ScanLine className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+                <span>2. Scan OCR</span>
+              </button>
+
+              {/* 3. Web Crawling */}
+              <button
+                type="button"
+                onClick={() => handleSubClick(handleCrawlerClick)}
+                className="w-full py-2 px-2.5 bg-sky-800/60 hover:bg-sky-800/80 text-white font-semibold rounded-lg text-left flex items-center gap-2 shadow-xs border border-sky-400/30 text-xs transition-all"
+              >
+                <Globe className="w-3.5 h-3.5 text-sky-300 shrink-0" />
+                <span>3. Web Crawling</span>
+              </button>
+            </div>
 
             <div className="space-y-1">
               <div className="text-[10px] font-bold text-sky-200 uppercase px-2 tracking-wider">Eksemplar</div>
@@ -1290,9 +1331,16 @@ export default function AdminDashboard({
   };
 
   return (
-    <div className="min-h-screen bg-[#f3f4f6] text-slate-800 flex flex-col font-sans">
-      {/* ================= 1. TOP NAVBAR SLiMS MODUL ================= */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-[#03231a] to-slate-950 text-slate-800 flex flex-col font-sans relative overflow-x-hidden">
+      {/* Background Interactive Jaring-Jaring Mesh Canvas (SLiMS Sky Blue & UIM Emerald) */}
+      <InteractiveParticleMesh className="opacity-90" theme="admin" />
+
+      {/* Atmospheric Ambient Glows */}
+      <div className="fixed top-12 left-10 w-96 h-96 bg-sky-500/10 rounded-full blur-3xl pointer-events-none z-0" />
+      <div className="fixed bottom-10 right-10 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none z-0" />
+
+      {/* ================= 1. TOP NAVBAR SLiMS MODUL (Frosted Glass Transparan) ================= */}
+      <header className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-white/30 sticky top-0 z-30 shadow-[0_4px_20px_rgba(0,0,0,0.08)]">
         <div className="flex items-center justify-between px-3 sm:px-6">
           <div className="flex items-center gap-1 sm:gap-2 overflow-hidden flex-1">
             {/* Tombol Hamburger Drawer Mobile */}
@@ -1467,8 +1515,8 @@ export default function AdminDashboard({
           </div>
         </aside>
 
-        {/* Sidebar Versi Desktop (Tetap Berdiri di Samping Layar) */}
-        <aside className={`hidden md:flex w-56 sm:w-60 ${themeColors.sidebarBg} flex-col shrink-0 text-white min-h-[calc(100vh-50px)] transition-colors`}>
+        {/* Sidebar Versi Desktop (Frosted Glass Transparan) */}
+        <aside className={`hidden md:flex w-56 sm:w-60 ${themeColors.sidebarBg} bg-opacity-90 backdrop-blur-xl flex-col shrink-0 text-white min-h-[calc(100vh-50px)] transition-all border-r border-white/15 shadow-xl relative z-10`}>
           {/* Header Profil Pustakawan */}
           <div className={`p-3.5 ${themeColors.headerBg} flex items-center gap-3 border-b border-white/20`}>
             <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-slate-400 shrink-0 shadow-xs">
@@ -1488,7 +1536,7 @@ export default function AdminDashboard({
           </div>
         </aside>
         {/* ================= KONTEN UTAMA SETIAP MODUL ================= */}
-        <main className="flex-1 p-3.5 sm:p-7 overflow-y-auto bg-white min-w-0">
+        <main className="flex-1 p-3.5 sm:p-7 overflow-y-auto bg-white/75 dark:bg-slate-900/75 backdrop-blur-md min-w-0 relative z-10 transition-colors">
           {/* Bilah Modul & Sub-Menu Cepat di Mobile */}
           <div className="md:hidden mb-4 p-2.5 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between gap-2 shadow-xs">
             <div className="flex items-center gap-1.5 min-w-0 text-xs">
@@ -1510,20 +1558,20 @@ export default function AdminDashboard({
           {/* ================= 1. MODUL BERANDA ================= */}
           {activeNavTab === 'Beranda' && (
             <div className="space-y-4 sm:space-y-6 max-w-6xl">
-              <h1 className="text-xl sm:text-2xl font-bold text-slate-800 tracking-tight">Administrasi Perpustakaan</h1>
+              <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Administrasi Perpustakaan</h1>
 
-              <div className="bg-[#e0f2fe] border border-[#bae6fd] rounded-lg p-3 sm:p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs sm:text-[13px] text-slate-700">
+              <div className="bg-sky-50/85 backdrop-blur-md border border-sky-200/90 rounded-2xl p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs sm:text-[13px] text-sky-950 shadow-xs">
                 <span>Cadangan basis data sistem perpustakaan dapat dibuat secara berkala.</span>
                 <button
                   onClick={() => downloadJSON({ books, members, loans, config: systemConfig }, 'backup_uim_digilib.json')}
-                  className="w-full sm:w-auto px-4 py-1.5 bg-[#0284c7] text-white font-bold rounded text-xs hover:bg-[#0369a1] flex items-center justify-center gap-1.5 transition-colors shadow-xs"
+                  className="w-full sm:w-auto px-4 py-2 bg-[#0284c7] text-white font-bold rounded-xl text-xs hover:bg-[#0369a1] flex items-center justify-center gap-1.5 transition-colors shadow-xs"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Cadangkan Sekarang</span>
                 </button>
               </div>
 
-              <div className="bg-[#fef3c7] border border-[#fde68a] rounded-lg p-3 sm:p-3.5 text-xs text-slate-800">
+              <div className="bg-amber-50/85 backdrop-blur-md border border-amber-200/90 rounded-2xl p-3.5 sm:p-4 text-xs text-amber-950 shadow-xs">
                 {pendingCount > 0 ? (
                   <span>Terdapat <strong className="font-bold text-red-600">{pendingCount}</strong> pendaftaran anggota baru (KTM) yang menunggu verifikasi Anda di modul <strong className="font-bold">Keanggotaan</strong>.</span>
                 ) : (
@@ -1532,27 +1580,27 @@ export default function AdminDashboard({
               </div>
 
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
-                <div className="bg-white rounded-lg p-3 sm:p-5 border border-slate-200 shadow-xs flex items-center gap-2.5 sm:gap-4 min-w-0">
-                  <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 shrink-0"><Bookmark className="w-4 h-4 sm:w-6 sm:h-6 stroke-[1.5]" /></div>
-                  <div className="min-w-0 flex-1"><span className="text-base sm:text-2xl font-bold text-slate-800 block truncate">{totalCollections}</span><span className="text-[11px] sm:text-xs text-slate-500 font-medium block truncate">Total Koleksi</span></div>
+                <div className="bg-white/85 dark:bg-slate-900/80 backdrop-blur-xl rounded-2xl p-3.5 sm:p-5 border border-white/60 dark:border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:shadow-lg hover:bg-white/95 transition-all flex items-center gap-2.5 sm:gap-4 min-w-0">
+                  <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center shrink-0 border border-sky-100 shadow-2xs"><Bookmark className="w-4 h-4 sm:w-6 sm:h-6 stroke-[1.8]" /></div>
+                  <div className="min-w-0 flex-1"><span className="text-base sm:text-2xl font-black text-slate-800 block truncate">{totalCollections}</span><span className="text-[11px] sm:text-xs text-slate-500 font-semibold block truncate">Total Koleksi</span></div>
                 </div>
-                <div className="bg-white rounded-lg p-3 sm:p-5 border border-slate-200 shadow-xs flex items-center gap-2.5 sm:gap-4 min-w-0">
-                  <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 shrink-0"><Layers className="w-4 h-4 sm:w-6 sm:h-6 stroke-[1.5]" /></div>
-                  <div className="min-w-0 flex-1"><span className="text-base sm:text-2xl font-bold text-slate-800 block truncate">{totalCopies}</span><span className="text-[11px] sm:text-xs text-slate-500 font-medium block truncate">Total Eksemplar</span></div>
+                <div className="bg-white/85 dark:bg-slate-900/80 backdrop-blur-xl rounded-2xl p-3.5 sm:p-5 border border-white/60 dark:border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:shadow-lg hover:bg-white/95 transition-all flex items-center gap-2.5 sm:gap-4 min-w-0">
+                  <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 border border-indigo-100 shadow-2xs"><Layers className="w-4 h-4 sm:w-6 sm:h-6 stroke-[1.8]" /></div>
+                  <div className="min-w-0 flex-1"><span className="text-base sm:text-2xl font-black text-slate-800 block truncate">{totalCopies}</span><span className="text-[11px] sm:text-xs text-slate-500 font-semibold block truncate">Total Eksemplar</span></div>
                 </div>
-                <div className="bg-white rounded-lg p-3 sm:p-5 border border-slate-200 shadow-xs flex items-center gap-2.5 sm:gap-4 min-w-0">
-                  <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 shrink-0"><Package className="w-4 h-4 sm:w-6 sm:h-6 stroke-[1.5]" /></div>
-                  <div className="min-w-0 flex-1"><span className="text-base sm:text-2xl font-bold text-slate-800 block truncate">{totalBorrowed}</span><span className="text-[11px] sm:text-xs text-slate-500 font-medium block truncate">Dipinjamkan</span></div>
+                <div className="bg-white/85 dark:bg-slate-900/80 backdrop-blur-xl rounded-2xl p-3.5 sm:p-5 border border-white/60 dark:border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:shadow-lg hover:bg-white/95 transition-all flex items-center gap-2.5 sm:gap-4 min-w-0">
+                  <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 border border-amber-100 shadow-2xs"><Package className="w-4 h-4 sm:w-6 sm:h-6 stroke-[1.8]" /></div>
+                  <div className="min-w-0 flex-1"><span className="text-base sm:text-2xl font-black text-slate-800 block truncate">{totalBorrowed}</span><span className="text-[11px] sm:text-xs text-slate-500 font-semibold block truncate">Dipinjamkan</span></div>
                 </div>
-                <div className="bg-white rounded-lg p-3 sm:p-5 border border-slate-200 shadow-xs flex items-center gap-2.5 sm:gap-4 min-w-0">
-                  <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 shrink-0"><CheckCircle className="w-4 h-4 sm:w-6 sm:h-6 stroke-[1.5]" /></div>
-                  <div className="min-w-0 flex-1"><span className="text-base sm:text-2xl font-bold text-slate-800 block truncate">{totalAvailable}</span><span className="text-[11px] sm:text-xs text-slate-500 font-medium block truncate">Tersedia</span></div>
+                <div className="bg-white/85 dark:bg-slate-900/80 backdrop-blur-xl rounded-2xl p-3.5 sm:p-5 border border-white/60 dark:border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:shadow-lg hover:bg-white/95 transition-all flex items-center gap-2.5 sm:gap-4 min-w-0">
+                  <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-100 shadow-2xs"><CheckCircle className="w-4 h-4 sm:w-6 sm:h-6 stroke-[1.8]" /></div>
+                  <div className="min-w-0 flex-1"><span className="text-base sm:text-2xl font-black text-slate-800 block truncate">{totalAvailable}</span><span className="text-[11px] sm:text-xs text-slate-500 font-semibold block truncate">Tersedia</span></div>
                 </div>
               </div>
 
               {/* Statistik Pengunjung & Trafik OPAC (Blueprint 5.B & 5.C) */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
-                <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-lg p-3 sm:p-4 border border-emerald-200 shadow-xs flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+                <div className="bg-gradient-to-br from-emerald-50/85 to-teal-50/75 backdrop-blur-xl rounded-2xl p-3 sm:p-4 border border-emerald-200/80 shadow-xs flex items-center gap-2.5 sm:gap-3.5 min-w-0">
                   <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
                     <Users className="w-4 h-4 sm:w-5 sm:h-5" />
                   </div>
@@ -1561,7 +1609,7 @@ export default function AdminDashboard({
                     <span className="text-[11px] sm:text-xs text-emerald-700 font-medium block truncate">Pengunjung Hari Ini</span>
                   </div>
                 </div>
-                <div className="bg-gradient-to-br from-cyan-50 to-sky-50 rounded-lg p-3 sm:p-4 border border-cyan-200 shadow-xs flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+                <div className="bg-gradient-to-br from-cyan-50/85 to-sky-50/75 backdrop-blur-xl rounded-2xl p-3 sm:p-4 border border-cyan-200/80 shadow-xs flex items-center gap-2.5 sm:gap-3.5 min-w-0">
                   <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-cyan-600 text-white flex items-center justify-center shrink-0">
                     <Eye className="w-4 h-4 sm:w-5 sm:h-5" />
                   </div>
@@ -1570,7 +1618,7 @@ export default function AdminDashboard({
                     <span className="text-[11px] sm:text-xs text-cyan-700 font-medium block truncate">Hits Hari Ini</span>
                   </div>
                 </div>
-                <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-lg p-3 sm:p-4 border border-amber-200 shadow-xs flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+                <div className="bg-gradient-to-br from-amber-50/85 to-orange-50/75 backdrop-blur-xl rounded-2xl p-3 sm:p-4 border border-amber-200/80 shadow-xs flex items-center gap-2.5 sm:gap-3.5 min-w-0">
                   <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center shrink-0 font-bold">
                     <Globe className="w-4 h-4 sm:w-5 sm:h-5" />
                   </div>
@@ -1579,7 +1627,7 @@ export default function AdminDashboard({
                     <span className="text-[11px] sm:text-xs text-amber-800 font-medium block truncate">Total Pengunjung Unik</span>
                   </div>
                 </div>
-                <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg p-3 sm:p-4 border border-purple-200 shadow-xs flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+                <div className="bg-gradient-to-br from-purple-50/85 to-indigo-50/75 backdrop-blur-xl rounded-2xl p-3 sm:p-4 border border-purple-200/80 shadow-xs flex items-center gap-2.5 sm:gap-3.5 min-w-0">
                   <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-purple-600 text-white flex items-center justify-center shrink-0">
                     <Activity className="w-4 h-4 sm:w-5 sm:h-5" />
                   </div>
@@ -1591,7 +1639,7 @@ export default function AdminDashboard({
               </div>
 
               {/* Transaksi Terkini */}
-              <div className="bg-white rounded-lg border border-slate-200 p-4 sm:p-5 shadow-xs">
+              <div className="bg-white/85 dark:bg-slate-900/80 backdrop-blur-xl rounded-2xl border border-white/60 dark:border-white/10 p-4 sm:p-5 shadow-xs">
                 <h3 className="font-bold text-slate-800 text-sm sm:text-base mb-3 pb-2 border-b">Transaksi Sirkulasi Terkini</h3>
                 {loans.length > 0 ? (
                   <div className="overflow-x-auto -mx-1 sm:mx-0">
@@ -1623,15 +1671,44 @@ export default function AdminDashboard({
               {/* SUBTAB 1: DAFTAR BIBLIOGRAFI */}
               {biblioSubTab === 'daftar' && (
                 <>
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-200">
-                    <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Katalog Bibliografi</h1>
-                    <button
-                      onClick={() => { setEditingBook(null); setIsBookFormOpen(true); }}
-                      className="px-3.5 py-1.5 bg-[#475569] hover:bg-[#334155] text-white font-bold text-xs rounded transition-colors shadow-xs flex items-center gap-1.5"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Tambah Bibliografi Baru</span>
-                    </button>
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                    <div>
+                      <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Katalog Bibliografi</h1>
+                      <p className="text-xs text-slate-500 mt-0.5">Kelola entri metadata koleksi buku fisik & e-book perpustakaan</p>
+                    </div>
+
+                    {/* 3 Tombol Entri Bibliografi yang Disediakan */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* 1. Tombol Tambah Manual */}
+                      <button
+                        type="button"
+                        onClick={() => { setEditingBook(null); setIsBookFormOpen(true); }}
+                        className="px-3.5 py-2 bg-[#475569] hover:bg-[#334155] text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center gap-1.5"
+                      >
+                        <Plus className="w-3.5 h-3.5 text-amber-300" />
+                        <span>+ Tambah Manual</span>
+                      </button>
+
+                      {/* 2. Tombol Scan OCR (Disediakan untuk sistem rekan tim) */}
+                      <button
+                        type="button"
+                        onClick={handleOcrClick}
+                        className="px-3.5 py-2 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center gap-1.5 border border-emerald-400/30"
+                      >
+                        <ScanLine className="w-3.5 h-3.5 text-emerald-200" />
+                        <span>Scan OCR</span>
+                      </button>
+
+                      {/* 3. Tombol Web Crawling (Disediakan untuk sistem rekan tim) */}
+                      <button
+                        type="button"
+                        onClick={handleCrawlerClick}
+                        className="px-3.5 py-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-700 hover:to-blue-700 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center gap-1.5 border border-sky-400/30"
+                      >
+                        <Globe className="w-3.5 h-3.5 text-sky-200" />
+                        <span>Web Crawling</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Filter Pencarian */}
@@ -2269,9 +2346,9 @@ export default function AdminDashboard({
                   <table className="w-full text-left text-xs">
                     <thead className="bg-[#f8fafc] text-slate-700 border-b font-bold uppercase text-[11px]">
                       <tr>
-                        <th className="py-2.5 px-3">Nomor KTM / NIDN</th>
-                        <th className="py-2.5 px-3">Nama Pemustaka</th>
-                        <th className="py-2.5 px-3">Kategori</th>
+                        <th className="py-2.5 px-3">Nomor Identitas (NIM / NIDN)</th>
+                        <th className="py-2.5 px-3">Nama Anggota</th>
+                        <th className="py-2.5 px-3">Tipe / Peran</th>
                         <th className="py-2.5 px-3">Program Studi</th>
                         <th className="py-2.5 px-3">Email</th>
                         <th className="py-2.5 px-3">Status Akun</th>
@@ -2282,13 +2359,13 @@ export default function AdminDashboard({
                       {members.filter(m => memberSubTab === 'semua' || (memberSubTab === 'pending' && m.status === 'pending') || (memberSubTab === 'verified' && m.status === 'verified')).length > 0 ? (
                         members.filter(m => memberSubTab === 'semua' || (memberSubTab === 'pending' && m.status === 'pending') || (memberSubTab === 'verified' && m.status === 'verified')).map((m) => (
                           <tr key={m.id} className="hover:bg-slate-50">
-                            <td className="py-3 px-3 font-mono font-bold text-slate-900">{m.nim || m.nidn}</td>
-                            <td className="py-3 px-3 font-medium text-slate-800">{m.nama || m.nama_lengkap}</td>
+                            <td className="py-3 px-3 font-mono font-bold text-slate-900">{m.nidn || m.nim || '-'}</td>
+                            <td className="py-3 px-3 font-medium text-slate-800">{m.nama}</td>
                             <td className="py-3 px-3">
                               {m.role === 'dosen' ? (
-                                <span className="bg-purple-100 text-purple-800 px-2 py-0.5 rounded font-bold text-[10px]">👨‍🏫 Dosen UIM</span>
+                                <span className="bg-purple-100 text-purple-800 px-2 py-0.5 rounded font-bold text-[10px]">Dosen</span>
                               ) : (
-                                <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold text-[10px]">🎓 Mahasiswa</span>
+                                <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-bold text-[10px]">Mahasiswa</span>
                               )}
                             </td>
                             <td className="py-3 px-3 text-slate-600">{m.prodi}</td>
@@ -2296,6 +2373,8 @@ export default function AdminDashboard({
                             <td className="py-3 px-3">
                               {m.status === 'pending' ? (
                                 <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-bold text-[10px]">Menunggu Verifikasi</span>
+                              ) : m.status === 'rejected' ? (
+                                <span className="bg-red-100 text-red-800 px-2 py-0.5 rounded font-bold text-[10px]">Ditolak</span>
                               ) : (
                                 <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold text-[10px]">Aktif / Terverifikasi</span>
                               )}
@@ -2303,7 +2382,7 @@ export default function AdminDashboard({
                             <td className="py-3 px-3 text-right">
                               {m.status === 'pending' ? (
                                 <div className="flex items-center justify-end gap-1.5">
-                                  <button onClick={() => handleVerifyMember(m.id, 'verified')} className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-xs shadow-xs">Setujui</button>
+                                  <button onClick={() => handleVerifyMember(m.id, 'verified')} className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-xs">Setujui</button>
                                   <button onClick={() => handleVerifyMember(m.id, 'rejected')} className="px-2.5 py-1 bg-slate-100 hover:bg-red-50 text-slate-600 text-xs rounded border">Tolak</button>
                                 </div>
                               ) : (
@@ -2317,7 +2396,7 @@ export default function AdminDashboard({
                           <td colSpan="7" className="py-12 text-center text-slate-400 bg-slate-50/50">
                             <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                             <p className="font-semibold text-slate-700">Belum ada anggota terdaftar pada filter ini.</p>
-                            <p className="text-slate-400 mt-1">Data pemustaka akan muncul otomatis saat Mahasiswa atau Dosen mendaftar di menu Area Anggota.</p>
+                            <p className="text-slate-400 mt-1">Data anggota akan muncul otomatis saat Mahasiswa atau Dosen mendaftar di menu Area Anggota.</p>
                           </td>
                         </tr>
                       )}
@@ -4558,6 +4637,8 @@ export default function AdminDashboard({
           </div>
         </div>
       )}
+
+
 
       {/* ================= MODAL CATAT PEMINJAMAN ================= */}
       {isLoanFormOpen && (

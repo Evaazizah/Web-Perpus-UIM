@@ -90,6 +90,46 @@ export function saveStoredMembers(members) {
 }
 
 /**
+ * Catat pendaftaran anggota baru (Mahasiswa atau Dosen) ke cache lokal agar langsung terlihat di antrean verifikasi
+ */
+export function recordNewRegistration(profileData) {
+  if (!profileData) return;
+  const members = getStoredMembers();
+  const id = profileData.id || profileData.uid || `user_${Date.now()}`;
+  const cleanNim = profileData.nim || profileData.nidn || '';
+  const idx = members.findIndex(
+    (m) =>
+      String(m.id) === String(id) ||
+      String(m.uid) === String(id) ||
+      (cleanNim && (m.nim === cleanNim || m.nidn === cleanNim))
+  );
+
+  const entry = {
+    id,
+    uid: id,
+    nama: profileData.nama || profileData.nama_lengkap || 'Anggota',
+    nama_lengkap: profileData.nama_lengkap || profileData.nama || 'Anggota',
+    email: profileData.email || '',
+    nim: profileData.nim || profileData.nidn || '',
+    nidn: profileData.nidn || '',
+    prodi: profileData.prodi || '-',
+    role: profileData.role || 'user',
+    status: profileData.status_verifikasi || 'pending',
+    status_verifikasi: profileData.status_verifikasi || 'pending',
+    registeredAt: profileData.created_at || new Date().toISOString(),
+    verifiedAt: null
+  };
+
+  if (idx >= 0) {
+    members[idx] = { ...members[idx], ...entry };
+  } else {
+    members.unshift(entry);
+  }
+
+  saveStoredMembers(members);
+}
+
+/**
  * Sinkronisasi data anggota langsung dari Firebase Cloud Firestore (koleksi 'users')
  */
 export async function syncMembersFromFirebase() {
@@ -101,18 +141,13 @@ export async function syncMembersFromFirebase() {
     const firestoreMembers = [];
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
-      // Hanya masukkan anggota sivitas (Mahasiswa & Dosen), lewati akun admin
-      if (data.role !== 'admin' && docSnap.id !== 'admin_uim_primary' && !data.email?.includes('admin@uim.ac.id')) {
-        firestoreMembers.push({
-          id: docSnap.id,
-          uid: docSnap.id,
-          ...data,
-          nim: data.nim || data.nidn || '-',
-          role: data.role || 'mahasiswa',
-          status: data.status_verifikasi || data.status || 'pending',
-          status_verifikasi: data.status_verifikasi || data.status || 'pending'
-        });
-      }
+      // Standarisasi field status / status_verifikasi
+      firestoreMembers.push({
+        id: docSnap.id,
+        uid: docSnap.id,
+        ...data,
+        status: data.status_verifikasi || data.status || 'pending'
+      });
     });
 
     saveStoredMembers(firestoreMembers);
@@ -202,17 +237,12 @@ export function subscribeMembers(callback) {
       const live = [];
       snapshot.forEach((docSnap) => {
         const d = docSnap.data();
-        if (d.role !== 'admin' && docSnap.id !== 'admin_uim_primary' && !d.email?.includes('admin@uim.ac.id')) {
-          live.push({
-            id: docSnap.id,
-            uid: docSnap.id,
-            ...d,
-            nim: d.nim || d.nidn || '-',
-            role: d.role || 'mahasiswa',
-            status: d.status_verifikasi || d.status || 'pending',
-            status_verifikasi: d.status_verifikasi || d.status || 'pending'
-          });
-        }
+        live.push({
+          id: docSnap.id,
+          uid: docSnap.id,
+          ...d,
+          status: d.status_verifikasi || d.status || 'pending'
+        });
       });
       saveStoredMembers(live);
       callback(live);

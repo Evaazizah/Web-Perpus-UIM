@@ -125,14 +125,15 @@ export default function AuthModal({
           email: email || `${nim.trim()}@student.uim.ac.id`,
           password
         });
-        setRegisteredSuccess(newStudent);
+        setRegisteredSuccess({ ...newStudent, role: 'mahasiswa' });
       } else {
         const user = await loginUser(nim, password);
-        if (user.status_verifikasi === 'pending') {
+        const statusVerif = user.status_verifikasi || user.status || 'pending';
+        if (statusVerif === 'pending') {
           setPendingNotice({
-            role: 'mahasiswa',
-            nim: user.nim || nim,
-            nama: user.nama || user.nama_lengkap || 'Mahasiswa'
+            nim,
+            nama: user.nama || user.nama_lengkap || 'Mahasiswa',
+            role: 'mahasiswa'
           });
         } else {
           onAuthSuccess(user);
@@ -162,6 +163,7 @@ export default function AuthModal({
     e.preventDefault();
     setLoading(true);
     setErrorMsg('');
+    setPendingNotice(null);
 
     try {
       if (dosenMode === 'register') {
@@ -172,14 +174,15 @@ export default function AuthModal({
           email: dosenEmail || `${nidn.trim()}@uim.ac.id`,
           password: dosenPassword
         });
-        setRegisteredSuccess(newDosen);
+        setRegisteredSuccess({ ...newDosen, role: 'dosen' });
       } else {
         const user = await loginUser(nidn || dosenEmail, dosenPassword);
-        if (user.status_verifikasi === 'pending') {
+        const statusVerif = user.status_verifikasi || user.status || 'pending';
+        if (statusVerif === 'pending') {
           setPendingNotice({
-            role: 'dosen',
-            nidn: user.nidn || user.nim || nidn,
-            nama: user.nama || user.nama_lengkap || dosenNama || 'Dosen UIM'
+            nim: user.nidn || nidn,
+            nama: user.nama || user.nama_lengkap || 'Bapak/Ibu Dosen',
+            role: 'dosen'
           });
         } else {
           onAuthSuccess(user);
@@ -225,7 +228,7 @@ export default function AuthModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 backdrop-blur-xs overflow-y-auto animate-fadeIn">
-      {/* Modal Container: Bersih, Rapi, Header Permanen, Tidak Terpotong */}
+      {/* Modal Container: Bersih, Rapi, Cukup Kartu Card Saja */}
       <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-200 flex flex-col max-h-[88vh] my-auto animate-scaleUp text-slate-800">
         
         {/* ================= HEADER MODAL (HIJAU UIM, SELALU TERLIHAT) ================= */}
@@ -254,7 +257,7 @@ export default function AuthModal({
         </div>
 
         {/* ================= TAB SELECTOR PERAN: Mahasiswa | Dosen | Pustakawan ================= */}
-        <div className="grid grid-cols-3 bg-slate-100 p-1.5 border-b border-slate-200 shrink-0 gap-1 text-xs">
+        <div className="grid grid-cols-3 bg-slate-900/5 backdrop-blur-sm p-1.5 border-b border-slate-200/80 shrink-0 gap-1 text-xs">
           {/* 1. Tab Mahasiswa */}
           <button
             type="button"
@@ -308,7 +311,7 @@ export default function AuthModal({
         </div>
 
         {/* ================= ISI KONTEN MODAL (BISA DI-SCROLL MULUS) ================= */}
-        <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-4 text-xs">
+        <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-4 text-xs bg-white/40 backdrop-blur-md">
           
           {/* Error Alert */}
           {errorMsg && (
@@ -323,14 +326,18 @@ export default function AuthModal({
             <div className="p-4 rounded-2xl bg-amber-50 border-2 border-amber-300 text-xs text-amber-900 space-y-2">
               <div className="flex items-center gap-2 font-bold text-amber-800 text-sm">
                 <Clock className="w-4 h-4 text-amber-600" />
-                <span>Status: Menunggu Verifikasi Staf Pustakawan</span>
+                <span>
+                  Status: Menunggu Verifikasi Staf Pustakawan (
+                  {pendingNotice.role === 'dosen' ? 'Dosen Sivitas' : 'Mahasiswa'})
+                </span>
               </div>
               <p className="leading-relaxed">
-                Akun {pendingNotice.role === 'dosen' ? 'Dosen UIM' : 'Mahasiswa'} dengan{' '}
-                <strong>{pendingNotice.role === 'dosen' ? 'NIDN/NIP ' + (pendingNotice.nidn || pendingNotice.nim) : 'NIM ' + pendingNotice.nim}</strong> ({pendingNotice.nama}) saat ini <strong>belum disetujui</strong> oleh staf perpustakaan.
+                Akun {pendingNotice.role === 'dosen' ? 'Dosen' : 'Mahasiswa'} dengan{' '}
+                <strong>{pendingNotice.role === 'dosen' ? 'NIDN/NIP' : 'NIM'} {pendingNotice.nim}</strong> (
+                {pendingNotice.nama}) saat ini masih berstatus <strong>Menunggu Persetujuan</strong> oleh staf perpustakaan.
               </p>
               <div className="p-2.5 bg-amber-100/70 rounded-xl text-[11px] text-amber-900 leading-snug">
-                💡 <strong>Langkah Aktivasi:</strong> Silakan hubungi Meja Sirkulasi Perpustakaan Pusat UIM atau login sebagai Admin (Pustakawan) untuk menyetujui dan mengaktifkan keanggotaan ini di Dashboard SLiMS.
+                💡 <strong>Langkah Aktivasi:</strong> Silakan hubungi Meja Sirkulasi Perpustakaan Pusat UIM atau masuk sebagai staf Administrator/Pustakawan untuk menyetujui akun ini.
               </div>
             </div>
           )}
@@ -338,8 +345,8 @@ export default function AuthModal({
           {/* REGISTRATION SUCCESS CONFIRMATION */}
           {registeredSuccess ? (
             <div className="text-center py-4 space-y-3">
-              <div className="w-14 h-14 bg-amber-100 border-2 border-amber-400 text-amber-700 rounded-full flex items-center justify-center mx-auto">
-                <Clock className="w-8 h-8" />
+              <div className="w-14 h-14 bg-emerald-100 border-2 border-emerald-400 text-emerald-700 rounded-full flex items-center justify-center mx-auto">
+                <CheckCircle2 className="w-8 h-8" />
               </div>
               <div>
                 <h3 className="text-base font-bold text-slate-900">
@@ -348,34 +355,33 @@ export default function AuthModal({
                     : 'Pendaftaran Mahasiswa Berhasil Diajukan!'}
                 </h3>
                 <p className="text-xs text-slate-600 mt-1">
-                  {registeredSuccess.role === 'dosen' ? 'Nomor NIDN / NIP Dosen: ' : 'Nomor Pokok Mahasiswa (NIM): '}
+                  {registeredSuccess.role === 'dosen' ? 'Nomor NIDN / NIP Dosen:' : 'Nomor Pokok Mahasiswa (NIM):'}{' '}
                   <strong className="text-emerald-800 font-mono">
                     {registeredSuccess.nidn || registeredSuccess.nim}
                   </strong>
-                  {' • '}{registeredSuccess.nama}
                 </p>
               </div>
-              <div className="bg-amber-50/70 p-3.5 rounded-2xl border border-amber-200 text-left text-xs space-y-1.5 text-amber-950">
-                <div className="flex items-center gap-1.5 text-amber-800 font-bold">
-                  <ShieldCheck className="w-4 h-4 text-amber-600" />
-                  <span>Tahap Verifikasi Wajib Staf Pustakawan</span>
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 text-left text-xs space-y-1.5 text-slate-700">
+                <div className="flex items-center gap-1.5 text-emerald-800 font-bold">
+                  <Clock className="w-4 h-4" />
+                  <span>Tahap Verifikasi Pustakawan</span>
                 </div>
-                <p className="text-[11px] leading-relaxed text-amber-900">
-                  Sesuai kebijakan perpustakaan UIM, seluruh pendaftar baru (Mahasiswa maupun Dosen) wajib diverifikasi oleh staf Pustakawan sebelum dapat login dan melakukan peminjaman buku. Data Anda telah masuk ke antrean verifikasi.
+                <p className="text-[11px] leading-relaxed text-slate-600">
+                  Data pendaftaran Anda telah tercatat dan masuk ke antrean verifikasi staf Pustakawan UIM. Akun belum dapat digunakan untuk masuk sampai disetujui oleh admin/pustakawan.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => {
-                  const wasDosen = registeredSuccess.role === 'dosen';
+                  const role = registeredSuccess.role;
                   setRegisteredSuccess(null);
-                  if (wasDosen) {
+                  if (role === 'dosen') {
                     setDosenMode('login');
                   } else {
                     setStudentMode('login');
                   }
                 }}
-                className="w-full py-2.5 bg-[#064e3b] hover:bg-[#043d30] text-white font-bold rounded-xl text-xs transition-colors shadow-sm"
+                className="w-full py-2.5 bg-[#047857] hover:bg-[#065f46] text-white font-bold rounded-xl text-xs transition-colors shadow-sm"
               >
                 Kembali ke Menu Masuk
               </button>
@@ -442,7 +448,7 @@ export default function AuthModal({
                           value={nama}
                           onChange={(e) => setNama(e.target.value)}
                           placeholder="Nama lengkap sesuai Kartu Mahasiswa"
-                          className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-[#047857] focus:bg-white"
+                          className="w-full pl-9 pr-3 py-2 bg-white/80 border border-slate-200/90 rounded-xl text-slate-800 focus:outline-none focus:border-[#047857] focus:bg-white focus:ring-2 focus:ring-emerald-500/20 shadow-2xs backdrop-blur-xs transition-all"
                         />
                       </div>
                     </div>
@@ -456,7 +462,7 @@ export default function AuthModal({
                         <select
                           value={prodi}
                           onChange={(e) => setProdi(e.target.value)}
-                          className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-[#047857] focus:bg-white cursor-pointer"
+                          className="w-full pl-9 pr-3 py-2 bg-white/80 border border-slate-200/90 rounded-xl text-slate-800 focus:outline-none focus:border-[#047857] focus:bg-white focus:ring-2 focus:ring-emerald-500/20 shadow-2xs backdrop-blur-xs transition-all cursor-pointer"
                         >
                           {UIM_PRODI_LIST.map((p) => (
                             <option key={p} value={p}>
@@ -478,7 +484,7 @@ export default function AuthModal({
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
                           placeholder="contoh: nama@student.uim.ac.id"
-                          className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-[#047857] focus:bg-white"
+                          className="w-full pl-9 pr-3 py-2 bg-white/80 border border-slate-200/90 rounded-xl text-slate-800 focus:outline-none focus:border-[#047857] focus:bg-white focus:ring-2 focus:ring-emerald-500/20 shadow-2xs backdrop-blur-xs transition-all"
                         />
                       </div>
                     </div>
@@ -497,7 +503,7 @@ export default function AuthModal({
                       value={nim}
                       onChange={(e) => setNim(e.target.value)}
                       placeholder="Contoh: 2024101001"
-                      className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-[#047857] focus:bg-white font-mono"
+                      className="w-full pl-9 pr-3 py-2 bg-white/80 border border-slate-200/90 rounded-xl text-slate-800 focus:outline-none focus:border-[#047857] focus:bg-white focus:ring-2 focus:ring-emerald-500/20 font-mono shadow-2xs backdrop-blur-xs transition-all"
                     />
                   </div>
                 </div>
@@ -515,7 +521,7 @@ export default function AuthModal({
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="Minimal 6 karakter"
-                      className="w-full pl-9 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-[#047857] focus:bg-white"
+                      className="w-full pl-9 pr-10 py-2 bg-white/80 border border-slate-200/90 rounded-xl text-slate-800 focus:outline-none focus:border-[#047857] focus:bg-white focus:ring-2 focus:ring-emerald-500/20 shadow-2xs backdrop-blur-xs transition-all"
                     />
                     <button
                       type="button"
@@ -618,7 +624,7 @@ export default function AuthModal({
                         <select
                           value={dosenProdi}
                           onChange={(e) => setDosenProdi(e.target.value)}
-                          className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-[#047857] focus:bg-white cursor-pointer"
+                          className="w-full pl-9 pr-3 py-2 bg-white/80 border border-slate-200/90 rounded-xl text-slate-800 focus:outline-none focus:border-[#047857] focus:bg-white focus:ring-2 focus:ring-emerald-500/20 shadow-2xs backdrop-blur-xs transition-all cursor-pointer"
                         >
                           {UIM_PRODI_LIST.map((p) => (
                             <option key={p} value={p}>
@@ -640,7 +646,7 @@ export default function AuthModal({
                           value={dosenEmail}
                           onChange={(e) => setDosenEmail(e.target.value)}
                           placeholder="contoh: dosen@uim.ac.id"
-                          className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-[#047857] focus:bg-white"
+                          className="w-full pl-9 pr-3 py-2 bg-white/80 border border-slate-200/90 rounded-xl text-slate-800 focus:outline-none focus:border-[#047857] focus:bg-white focus:ring-2 focus:ring-emerald-500/20 shadow-2xs backdrop-blur-xs transition-all"
                         />
                       </div>
                     </div>
@@ -659,7 +665,7 @@ export default function AuthModal({
                       value={nidn}
                       onChange={(e) => setNidn(e.target.value)}
                       placeholder="Contoh: 0715088201 / NIP"
-                      className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-[#047857] focus:bg-white font-mono"
+                      className="w-full pl-9 pr-3 py-2 bg-white/80 border border-slate-200/90 rounded-xl text-slate-800 focus:outline-none focus:border-[#047857] focus:bg-white focus:ring-2 focus:ring-emerald-500/20 font-mono shadow-2xs backdrop-blur-xs transition-all"
                     />
                   </div>
                 </div>
@@ -677,7 +683,7 @@ export default function AuthModal({
                       value={dosenPassword}
                       onChange={(e) => setDosenPassword(e.target.value)}
                       placeholder="Minimal 6 karakter"
-                      className="w-full pl-9 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-[#047857] focus:bg-white"
+                      className="w-full pl-9 pr-10 py-2 bg-white/80 border border-slate-200/90 rounded-xl text-slate-800 focus:outline-none focus:border-[#047857] focus:bg-white focus:ring-2 focus:ring-emerald-500/20 shadow-2xs backdrop-blur-xs transition-all"
                     />
                     <button
                       type="button"
@@ -764,7 +770,7 @@ export default function AuthModal({
                       value={adminUsername}
                       onChange={(e) => setAdminUsername(e.target.value)}
                       placeholder="admin"
-                      className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-amber-500 focus:bg-white font-mono text-xs"
+                      className="w-full pl-9 pr-3 py-2 bg-white/80 border border-slate-200/90 rounded-xl text-slate-800 focus:outline-none focus:border-amber-500 focus:bg-white focus:ring-2 focus:ring-amber-500/20 font-mono text-xs shadow-2xs backdrop-blur-xs transition-all"
                     />
                   </div>
                 </div>
@@ -781,7 +787,7 @@ export default function AuthModal({
                       value={adminPassword}
                       onChange={(e) => setAdminPassword(e.target.value)}
                       placeholder="admin123"
-                      className="w-full pl-9 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-amber-500 focus:bg-white text-xs"
+                      className="w-full pl-9 pr-10 py-2 bg-white/80 border border-slate-200/90 rounded-xl text-slate-800 focus:outline-none focus:border-amber-500 focus:bg-white focus:ring-2 focus:ring-amber-500/20 text-xs shadow-2xs backdrop-blur-xs transition-all"
                     />
                     <button
                       type="button"

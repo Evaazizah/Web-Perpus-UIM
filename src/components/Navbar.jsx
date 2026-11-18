@@ -32,12 +32,15 @@ import {
   LogOut,
   User,
   Bell,
-  MessageSquare
+  MessageSquare,
+  RotateCw
 } from 'lucide-react';
 import JournalPortalModal from './JournalPortalModal';
 import NewsPortalModal from './NewsPortalModal';
 import NotificationModal from './NotificationModal';
 import FeedbackModal from './FeedbackModal';
+import ProfileModal from './ProfileModal';
+import ServiceModal from './ServiceModal';
 import { getUnreadNotificationCount, subscribeNotifications } from '../lib/notificationService';
 
 export default function Navbar({
@@ -52,6 +55,8 @@ export default function Navbar({
   onOpenNotification
 }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileProfileOpen, setMobileProfileOpen] = useState(false);
+  const [mobileServiceOpen, setMobileServiceOpen] = useState(false);
   const [activeModal, setActiveModal] = useState(null); // 'profil' | 'layanan' | 'jurnal' | 'repository' | 'berita' | 'pengumuman' | 'bantuan' | 'pustakawan'
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [serviceDropdownOpen, setServiceDropdownOpen] = useState(false);
@@ -123,38 +128,54 @@ export default function Navbar({
               <button
                 type="button"
                 onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
-                onBlur={() => setTimeout(() => setProfileDropdownOpen(false), 200)}
-                className="px-3 py-1.5 rounded-lg flex items-center gap-1.5 text-emerald-100 hover:text-white hover:bg-emerald-800/80 transition-colors"
+                onBlur={() => setTimeout(() => setProfileDropdownOpen(false), 250)}
+                className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
+                  profileDropdownOpen || activeModal?.startsWith('profil') || activeModal === 'pustakawan'
+                    ? 'bg-emerald-800 text-white'
+                    : 'text-emerald-100 hover:text-white hover:bg-emerald-800/80'
+                }`}
               >
                 <BookOpen className="w-3.5 h-3.5" />
                 <span>{t('nav_profile')}</span>
-                <ChevronDown className="w-3 h-3 text-emerald-300" />
+                <ChevronDown className={`w-3 h-3 text-emerald-300 transition-transform ${profileDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
               {profileDropdownOpen && (
-                <div className="absolute left-0 mt-1 w-48 bg-white rounded-xl shadow-xl border border-slate-100 py-1.5 text-slate-800 text-xs z-50 animate-fadeIn">
+                <div className="absolute left-0 mt-1 w-52 bg-white rounded-xl shadow-xl border border-slate-100 py-1.5 text-slate-800 text-xs z-50 animate-fadeIn">
                   <button
-                    onClick={() => { setActiveModal('profil-visi'); setProfileDropdownOpen(false); }}
-                    className="w-full text-left px-4 py-2 hover:bg-emerald-50 hover:text-[#047857] font-medium"
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setActiveModal('profil-visi');
+                      setProfileDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-4 py-2.5 hover:bg-emerald-50 hover:text-[#047857] font-medium transition-colors flex items-center justify-between group"
                   >
-                    Visi & Misi Perpustakaan
+                    <span>Visi & Misi Perpustakaan</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity" />
                   </button>
                   <button
-                    onClick={() => { setActiveModal('profil-struktur'); setProfileDropdownOpen(false); }}
-                    className="w-full text-left px-4 py-2 hover:bg-emerald-50 hover:text-[#047857] font-medium"
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setActiveModal('pustakawan');
+                      setProfileDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-4 py-2.5 hover:bg-emerald-50 hover:text-[#047857] font-medium transition-colors flex items-center justify-between group"
                   >
-                    Struktur Organisasi
+                    <span>Staf Pustakawan UIM</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity" />
                   </button>
                   <button
-                    onClick={() => { setActiveModal('pustakawan'); setProfileDropdownOpen(false); }}
-                    className="w-full text-left px-4 py-2 hover:bg-emerald-50 hover:text-[#047857] font-medium"
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setActiveModal('profil-tatatertib');
+                      setProfileDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-4 py-2.5 hover:bg-emerald-50 hover:text-[#047857] font-medium transition-colors flex items-center justify-between group"
                   >
-                    Staf Pustakawan UIM
-                  </button>
-                  <button
-                    onClick={() => { setActiveModal('profil-tatatertib'); setProfileDropdownOpen(false); }}
-                    className="w-full text-left px-4 py-2 hover:bg-emerald-50 hover:text-[#047857] font-medium"
-                  >
-                    Tata Tertib Pemustaka
+                    <span>Ketentuan Sirkulasi & Tata Tertib</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity" />
                   </button>
                 </div>
               )}
@@ -165,45 +186,69 @@ export default function Navbar({
               <button
                 type="button"
                 onClick={() => setServiceDropdownOpen(!serviceDropdownOpen)}
-                onBlur={() => setTimeout(() => setServiceDropdownOpen(false), 200)}
-                className="px-3 py-1.5 rounded-lg flex items-center gap-1.5 text-emerald-100 hover:text-white hover:bg-emerald-800/80 transition-colors"
+                onBlur={() => setTimeout(() => setServiceDropdownOpen(false), 250)}
+                className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
+                  serviceDropdownOpen
+                    ? 'bg-emerald-800 text-white'
+                    : 'text-emerald-100 hover:text-white hover:bg-emerald-800/80'
+                }`}
               >
                 <Briefcase className="w-3.5 h-3.5" />
                 <span>{t('nav_services')}</span>
-                <ChevronDown className="w-3 h-3 text-emerald-300" />
+                <ChevronDown className={`w-3 h-3 text-emerald-300 transition-transform ${serviceDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
               {serviceDropdownOpen && (
-                <div className="absolute left-0 mt-1 w-52 bg-white rounded-xl shadow-xl border border-slate-100 py-1.5 text-slate-800 text-xs z-50 animate-fadeIn">
+                <div className="absolute left-0 mt-1 w-60 bg-white rounded-xl shadow-xl border border-slate-100 py-1.5 text-slate-800 text-xs z-50 animate-fadeIn">
                   <button
-                    onClick={() => { handleNavClick('katalog'); setServiceDropdownOpen(false); }}
-                    className="w-full text-left px-4 py-2 hover:bg-emerald-50 hover:text-[#047857] font-medium"
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setActiveModal('layanan-bebaspustaka');
+                      setServiceDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-4 py-2.5 hover:bg-emerald-50 hover:text-[#047857] font-medium transition-colors flex items-center gap-2.5"
                   >
-                    Katalog OPAC SLiMS 9
+                    <FileCheck className="w-4 h-4 text-[#047857] shrink-0" />
+                    <span>Surat Bebas Pustaka Online</span>
                   </button>
+
                   <button
-                    onClick={() => { setActiveModal('layanan-bebaspustaka'); setServiceDropdownOpen(false); }}
-                    className="w-full text-left px-4 py-2 hover:bg-emerald-50 hover:text-[#047857] font-medium"
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setActiveModal('layanan-turnitin');
+                      setServiceDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-4 py-2.5 hover:bg-emerald-50 hover:text-[#047857] font-medium transition-colors flex items-center gap-2.5"
                   >
-                    Surat Bebas Pustaka Online
+                    <ShieldCheck className="w-4 h-4 text-[#047857] shrink-0" />
+                    <span>Uji Kemiripan Turnitin</span>
                   </button>
+
                   <button
-                    onClick={() => { setActiveModal('layanan-turnitin'); setServiceDropdownOpen(false); }}
-                    className="w-full text-left px-4 py-2 hover:bg-emerald-50 hover:text-[#047857] font-medium"
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setActiveModal('layanan-usulan');
+                      setServiceDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-4 py-2.5 hover:bg-emerald-50 hover:text-[#047857] font-medium transition-colors flex items-center gap-2.5"
                   >
-                    Uji Kemiripan Turnitin
+                    <BookPlus className="w-4 h-4 text-[#047857] shrink-0" />
+                    <span>Usulan Pengadaan Buku</span>
                   </button>
+
                   <button
-                    onClick={() => { setActiveModal('komentar'); setServiceDropdownOpen(false); }}
-                    className="w-full text-left px-4 py-2 hover:bg-emerald-50 hover:text-[#047857] font-medium flex items-center justify-between"
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setActiveModal('layanan-peminjaman');
+                      setServiceDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-4 py-2.5 hover:bg-emerald-50 hover:text-[#047857] font-medium transition-colors flex items-center gap-2.5"
                   >
-                    <span>Kotak Saran & Komentar</span>
-                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-full">Civitas</span>
-                  </button>
-                  <button
-                    onClick={() => { setActiveModal('layanan'); setServiceDropdownOpen(false); }}
-                    className="w-full text-left px-4 py-2 hover:bg-emerald-50 hover:text-[#047857] font-medium"
-                  >
-                    Seluruh Layanan Unggulan
+                    <RotateCw className="w-4 h-4 text-[#047857] shrink-0" />
+                    <span>Layanan Peminjaman Buku</span>
                   </button>
                 </div>
               )}
@@ -277,7 +322,7 @@ export default function Navbar({
 
         {/* Mobile Navigation Dropdown Menu */}
         {mobileMenuOpen && (
-          <div className="lg:hidden bg-[#034d36] border-t border-emerald-700/80 px-4 py-3 space-y-2 text-xs font-semibold">
+          <div className="lg:hidden bg-[#034d36] border-t border-emerald-700/80 px-4 py-3 space-y-2 text-xs font-semibold animate-fadeIn">
             <button
               onClick={() => handleNavClick('beranda')}
               className="w-full text-left py-2 px-3 rounded-lg hover:bg-emerald-800 flex items-center gap-2"
@@ -285,6 +330,96 @@ export default function Navbar({
               <Home className="w-4 h-4" />
               <span>Beranda</span>
             </button>
+
+            {/* Mobile Profil Menu */}
+            <div className="rounded-lg bg-emerald-900/60 overflow-hidden border border-emerald-700/40">
+              <button
+                type="button"
+                onClick={() => setMobileProfileOpen(!mobileProfileOpen)}
+                className="w-full text-left py-2 px-3 hover:bg-emerald-800 flex items-center justify-between"
+              >
+                <div className="flex items-center gap-2">
+                  <BookOpen className="w-4 h-4 text-emerald-300" />
+                  <span>Profil Perpustakaan</span>
+                </div>
+                <ChevronDown className={`w-3.5 h-3.5 text-emerald-300 transition-transform ${mobileProfileOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {mobileProfileOpen && (
+                <div className="bg-emerald-950/70 py-1 px-2 space-y-1 text-[11px] font-normal border-t border-emerald-800/80">
+                  <button
+                    onClick={() => { setActiveModal('profil-visi'); setMobileMenuOpen(false); }}
+                    className="w-full text-left py-1.5 px-3 rounded-md hover:bg-emerald-800/80 flex items-center gap-2 text-emerald-100 hover:text-white"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    <span>Visi & Misi Perpustakaan</span>
+                  </button>
+                  <button
+                    onClick={() => { setActiveModal('pustakawan'); setMobileMenuOpen(false); }}
+                    className="w-full text-left py-1.5 px-3 rounded-md hover:bg-emerald-800/80 flex items-center gap-2 text-emerald-100 hover:text-white"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    <span>Staf Pustakawan UIM</span>
+                  </button>
+                  <button
+                    onClick={() => { setActiveModal('profil-tatatertib'); setMobileMenuOpen(false); }}
+                    className="w-full text-left py-1.5 px-3 rounded-md hover:bg-emerald-800/80 flex items-center gap-2 text-emerald-100 hover:text-white"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    <span>Ketentuan Sirkulasi & Tata Tertib</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Mobile Layanan Menu */}
+            <div className="rounded-lg bg-emerald-900/60 overflow-hidden border border-emerald-700/40">
+              <button
+                type="button"
+                onClick={() => setMobileServiceOpen(!mobileServiceOpen)}
+                className="w-full text-left py-2 px-3 hover:bg-emerald-800 flex items-center justify-between"
+              >
+                <div className="flex items-center gap-2">
+                  <Briefcase className="w-4 h-4 text-emerald-300" />
+                  <span>Layanan Terpadu</span>
+                </div>
+                <ChevronDown className={`w-3.5 h-3.5 text-emerald-300 transition-transform ${mobileServiceOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {mobileServiceOpen && (
+                <div className="bg-emerald-950/70 py-1 px-2 space-y-1 text-[11px] font-normal border-t border-emerald-800/80">
+                  <button
+                    onClick={() => { setActiveModal('layanan-bebaspustaka'); setMobileMenuOpen(false); }}
+                    className="w-full text-left py-1.5 px-3 rounded-md hover:bg-emerald-800/80 flex items-center gap-2 text-emerald-100 hover:text-white"
+                  >
+                    <FileCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Surat Bebas Pustaka Online</span>
+                  </button>
+                  <button
+                    onClick={() => { setActiveModal('layanan-turnitin'); setMobileMenuOpen(false); }}
+                    className="w-full text-left py-1.5 px-3 rounded-md hover:bg-emerald-800/80 flex items-center gap-2 text-emerald-100 hover:text-white"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Uji Kemiripan Turnitin</span>
+                  </button>
+                  <button
+                    onClick={() => { setActiveModal('layanan-usulan'); setMobileMenuOpen(false); }}
+                    className="w-full text-left py-1.5 px-3 rounded-md hover:bg-emerald-800/80 flex items-center gap-2 text-emerald-100 hover:text-white"
+                  >
+                    <BookPlus className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Usulan Pengadaan Buku</span>
+                  </button>
+                  <button
+                    onClick={() => { setActiveModal('layanan-peminjaman'); setMobileMenuOpen(false); }}
+                    className="w-full text-left py-1.5 px-3 rounded-md hover:bg-emerald-800/80 flex items-center gap-2 text-emerald-100 hover:text-white"
+                  >
+                    <RotateCw className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Layanan Peminjaman Buku</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
             <button
               onClick={() => handleNavClick('katalog')}
               className="w-full text-left py-2 px-3 rounded-lg hover:bg-emerald-800 flex items-center gap-2"
@@ -370,87 +505,45 @@ export default function Navbar({
         </div>
       )}
 
-      {/* 2. Modal Profil Visi Misi */}
-      {activeModal?.startsWith('profil') && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 text-slate-800 shadow-2xl relative">
-            <button
-              onClick={() => setActiveModal(null)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <div className="flex items-center gap-2 mb-4 text-[#047857]">
-              <Building2 className="w-6 h-6" />
-              <h3 className="text-lg font-bold">Profil UPT Perpustakaan UIM</h3>
-            </div>
-            <div className="space-y-3 text-xs sm:text-sm text-slate-600 leading-relaxed max-h-[70vh] overflow-y-auto pr-1">
-              <div>
-                <h4 className="font-bold text-slate-800">Visi:</h4>
-                <p className="italic text-emerald-800">
-                  “Menjadi pusat rujukan riset dan keilmuan Islam berbasis teknologi digital cerdas yang unggul, berakhlakul karimah, dan berdaya saing pada tahun 2030.”
-                </p>
-              </div>
-              <div>
-                <h4 className="font-bold text-slate-800">Misi:</h4>
-                <ul className="list-disc pl-4 space-y-1 mt-1">
-                  <li>Menyediakan koleksi literatur akademik dan monograf Islam terlengkap.</li>
-                  <li>Mengembangkan portal OPAC terintegrasi SLiMS 9.8.0 Bulian dan sistem rekomendasi Collaborative Filtering.</li>
-                  <li>Memberikan layanan prima bagi seluruh civitas akademika Universitas Islam Madura.</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* 2. Modal Profil Visi Misi, Staf Pustakawan & Tata Tertib */}
+      <ProfileModal
+        isOpen={Boolean(activeModal?.startsWith('profil') || activeModal === 'pustakawan')}
+        initialTab={
+          activeModal === 'pustakawan' || activeModal === 'profil-pustakawan'
+            ? 'pustakawan'
+            : activeModal === 'profil-tatatertib'
+            ? 'tatatertib'
+            : 'visi'
+        }
+        currentUser={currentUser}
+        onClose={() => setActiveModal(null)}
+      />
 
-      {/* 3. Modal Layanan Unggulan */}
-      {activeModal?.startsWith('layanan') && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white rounded-2xl max-w-xl w-full p-6 text-slate-800 shadow-2xl relative">
-            <button
-              onClick={() => setActiveModal(null)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <div className="flex items-center gap-2 mb-4 text-[#047857]">
-              <Briefcase className="w-6 h-6" />
-              <h3 className="text-lg font-bold">Layanan Terpadu Perpustakaan</h3>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs max-h-[70vh] overflow-y-auto pr-1">
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
-                <h4 className="font-bold text-[#047857] flex items-center gap-1.5 mb-1">
-                  <BookOpen className="w-4 h-4" />
-                  <span>Katalog OPAC SLiMS</span>
-                </h4>
-                <p className="text-slate-600 text-[11px]">Penelusuran ketersediaan eksemplar buku cetak dan e-book di rak perpustakaan secara real-time.</p>
-              </div>
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl">
-                <h4 className="font-bold text-blue-700 flex items-center gap-1.5 mb-1">
-                  <Award className="w-4 h-4" />
-                  <span>Bebas Pustaka Mandiri</span>
-                </h4>
-                <p className="text-slate-600 text-[11px]">Penerbitan surat keterangan bebas pinjaman buku sebagai syarat kelulusan yudisium dan wisuda.</p>
-              </div>
-              <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl">
-                <h4 className="font-bold text-teal-700 flex items-center gap-1.5 mb-1">
-                  <ShieldCheck className="w-4 h-4" />
-                  <span>Uji Turnitin</span>
-                </h4>
-                <p className="text-slate-600 text-[11px]">Pemeriksaan tingkat kemiripan (similarity) naskah skripsi dan artikel ilmiah dosen.</p>
-              </div>
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
-                <h4 className="font-bold text-amber-700 flex items-center gap-1.5 mb-1">
-                  <FileText className="w-4 h-4" />
-                  <span>E-Journal & Database</span>
-                </h4>
-                <p className="text-slate-600 text-[11px]">Akses jurnal nasional (Sinta, Garuda, Moraref) dan database jurnal internasional.</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* 3. Modal Layanan Terpadu Perpustakaan (4 Layanan Utama) */}
+      <ServiceModal
+        isOpen={Boolean(
+          activeModal === 'layanan-bebaspustaka' ||
+          activeModal === 'layanan-turnitin' ||
+          activeModal === 'layanan-usulan' ||
+          activeModal === 'layanan-peminjaman' ||
+          activeModal === 'layanan'
+        )}
+        serviceType={
+          activeModal === 'layanan-turnitin'
+            ? 'turnitin'
+            : activeModal === 'layanan-usulan'
+            ? 'usulan-buku'
+            : activeModal === 'layanan-peminjaman'
+            ? 'peminjaman-buku'
+            : 'bebas-pustaka'
+        }
+        currentUser={currentUser}
+        onClose={() => setActiveModal(null)}
+        onNavigateToCatalog={() => {
+          setActiveModal(null);
+          handleNavClick('katalog');
+        }}
+      />
 
       {/* 4. Modal Portal Jurnal & Karya Ilmiah Sivitas UIM */}
       <JournalPortalModal
